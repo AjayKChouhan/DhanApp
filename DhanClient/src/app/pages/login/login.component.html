@@ -1,0 +1,108 @@
+<section class="card">
+  <h2>Manage Accounts</h2>
+  <p class="muted">
+    Saving replaces the <em>entire</em> saved account list, so re-enter the PIN and TOTP secret
+    for every account you want to keep (secrets are never sent back to the browser once saved).
+  </p>
+  <div id="accountRows">
+    @for (account of accounts; track $index) {
+      <div class="account-row">
+        <div class="field">
+          <label>Account Name</label>
+          <input type="text" placeholder="e.g. John's Account" [(ngModel)]="account.accountName" />
+        </div>
+        <div class="field">
+          <label>Dhan Client ID</label>
+          <input type="text" placeholder="1000000001" [(ngModel)]="account.dhanClientId" />
+        </div>
+        <div class="field">
+          <label>PIN</label>
+          <input type="password" placeholder="PIN" [(ngModel)]="account.pin" />
+        </div>
+        <div class="field">
+          <label>TOTP Secret</label>
+          <input type="text" placeholder="Base32 secret" [(ngModel)]="account.totpSecret" />
+        </div>
+        <button type="button" class="secondary" (click)="removeRow($index)">Remove</button>
+      </div>
+    }
+  </div>
+  <div class="toolbar">
+    <button type="button" class="secondary" (click)="addRow()">+ Add Account</button>
+    <button type="button" [disabled]="saving" (click)="saveAccounts()">Save Accounts</button>
+  </div>
+  @if (saveStatusMessage) {
+    <div class="status-line" [class.error]="saveStatusIsError" [class.success]="!saveStatusIsError">{{ saveStatusMessage }}</div>
+  }
+</section>
+
+<section class="card">
+  <h2>Account Status</h2>
+  <div class="toolbar">
+    <button type="button" class="secondary" [disabled]="statusLoading" (click)="refreshStatus()">Refresh Status</button>
+  </div>
+  @if (statusError) {
+    <div class="status-line error">{{ statusError }}</div>
+  } @else if (statusLoading) {
+    <div class="empty-state">Loading...</div>
+  } @else if (statusRows.length === 0) {
+    <div class="empty-state">No accounts saved yet.</div>
+  } @else {
+    <table>
+      <thead>
+        <tr>
+          <th>Account Name</th>
+          <th>Dhan Client ID</th>
+          <th>Connected</th>
+          <th>Token Expiry (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of statusRows; track row.dhanClientId) {
+          <tr>
+            <td>{{ row.accountName }}</td>
+            <td>{{ row.dhanClientId }}</td>
+            <td><span class="badge" [class.ok]="row.isConnected" [class.fail]="!row.isConnected">{{ row.isConnected ? 'SUCCESS' : 'FAILED' }}</span></td>
+            <td>{{ row.tokenExpiryUtc ? (row.tokenExpiryUtc | date:'medium') : '-' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>
+
+<section class="card">
+  <h2>Login</h2>
+  <p class="muted">Generates (or refreshes) an access token for every saved account, account-name wise.</p>
+  <div class="toolbar">
+    <button type="button" [disabled]="loggingIn" (click)="loginAll()">Login All Accounts</button>
+  </div>
+  @if (loginError) {
+    <div class="status-line error">{{ loginError }}</div>
+  } @else if (loggingIn) {
+    <div class="empty-state">Logging in...</div>
+  } @else if (loginResults.length > 0) {
+    <table>
+      <thead>
+        <tr>
+          <th>Account Name</th>
+          <th>Dhan Client ID</th>
+          <th>Result</th>
+          <th>Expiry (UTC)</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of loginResults; track row.dhanClientId) {
+          <tr>
+            <td>{{ row.accountName }}</td>
+            <td>{{ row.dhanClientId }}</td>
+            <td><span class="badge" [class.ok]="row.success" [class.fail]="!row.success">{{ row.success ? 'SUCCESS' : 'FAILED' }}</span></td>
+            <td>{{ row.expiryUtc ? (row.expiryUtc | date:'medium') : '-' }}</td>
+            <td>{{ row.errorMessage || '' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>

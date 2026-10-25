@@ -1,0 +1,102 @@
+<section class="card">
+  <h2>Setup Static IP</h2>
+  <p class="muted">
+    Dhan requires order placement/modification/cancellation to come from a whitelisted static IP
+    (per account, not per computer). This auto-detects this server's own public IP - the IP Dhan
+    actually sees when this app places orders - so you don't need to look it up or type it manually.
+    It then sets that same IP for every saved account in one click. Once set, an IP cannot be
+    changed again for 7 days.
+  </p>
+
+  <div class="field">
+    <label for="ipInput">Static IP Address</label>
+    <input id="ipInput" type="text" placeholder="Detecting..." [(ngModel)]="ip" />
+  </div>
+  <div class="field">
+    <label for="ipFlagSelect">IP Slot</label>
+    <select id="ipFlagSelect" [(ngModel)]="ipFlag">
+      <option value="PRIMARY">Primary</option>
+      <option value="SECONDARY">Secondary</option>
+    </select>
+  </div>
+
+  @if (detectError) {
+    <div class="status-line error">{{ detectError }}</div>
+  }
+
+  <div class="toolbar">
+    <button type="button" class="secondary" [disabled]="detecting" (click)="detectMyIp()">
+      {{ detecting ? 'Detecting...' : 'Detect My IP' }}
+    </button>
+    <button type="button" [disabled]="setting || detecting" (click)="setStaticIpForAll()">Set IP for All Accounts</button>
+  </div>
+
+
+  @if (setStatusMessage) {
+    <div class="status-line" [class.error]="setStatusIsError" [class.success]="!setStatusIsError">{{ setStatusMessage }}</div>
+  }
+
+  @if (setResults.length > 0) {
+    <table>
+      <thead>
+        <tr>
+          <th>Account Name</th>
+          <th>Dhan Client ID</th>
+          <th>Result</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of setResults; track row.dhanClientId) {
+          <tr>
+            <td>{{ row.accountName }}</td>
+            <td>{{ row.dhanClientId }}</td>
+            <td><span class="badge" [class.ok]="row.success" [class.fail]="!row.success">{{ row.success ? 'SUCCESS' : 'FAILED' }}</span></td>
+            <td>{{ row.errorMessage || '' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>
+
+<section class="card">
+  <h2>IP Status (Account-wise)</h2>
+  <div class="toolbar">
+    <button type="button" class="secondary" [disabled]="statusLoading" (click)="refreshIpStatus()">Refresh IP Status</button>
+  </div>
+  @if (statusError) {
+    <div class="status-line error">{{ statusError }}</div>
+  } @else if (statusLoading) {
+    <div class="empty-state">Loading...</div>
+  } @else if (statusRows.length === 0) {
+    <div class="empty-state">No saved accounts yet. Add accounts and login first.</div>
+  } @else {
+    <table>
+      <thead>
+        <tr>
+          <th>Account Name</th>
+          <th>Dhan Client ID</th>
+          <th>Primary IP</th>
+          <th>Next Change (Primary)</th>
+          <th>Secondary IP</th>
+          <th>Next Change (Secondary)</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of statusRows; track row.dhanClientId) {
+          <tr>
+            <td>{{ row.accountName }}</td>
+            <td>{{ row.dhanClientId }}</td>
+            <td>{{ row.primaryIp || '-' }}</td>
+            <td>{{ row.modifyDatePrimary ? (row.modifyDatePrimary | date:'mediumDate') : '-' }}</td>
+            <td>{{ row.secondaryIp || '-' }}</td>
+            <td>{{ row.modifyDateSecondary ? (row.modifyDateSecondary | date:'mediumDate') : '-' }}</td>
+            <td>{{ row.errorMessage || '' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>

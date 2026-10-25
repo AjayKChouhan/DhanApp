@@ -1,0 +1,36 @@
+# .NET generated files
+**/bin/
+**/obj/
+**/Debug/
+**/Release/
+**/publish/
+.vs/
+*.dll
+*.pdb
+*.exe
+
+# Angular generated files
+**/node_modules/
+**/dist/
+**/.angular/
+**/coverage/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/secrets.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/accounts.json
+**/tokens.json
+**/dhan-accounts.local.json
+
+# IDE and operating system files
+.idea/
+.DS_Store
+Thumbs.db

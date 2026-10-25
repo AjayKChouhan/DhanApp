@@ -1,0 +1,93 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "stop-api",
+            "type": "shell",
+            "command": "if (Get-Process -Name DhanAPI -ErrorAction SilentlyContinue) { Stop-Process -Name DhanAPI -Force }",
+            "problemMatcher": []
+        },
+        {
+            "label": "build-api",
+            "dependsOn": ["stop-api"],
+            "dependsOrder": "sequence",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/DhanAPI/DhanAPI.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "publish",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "publish",
+                "${workspaceFolder}/DhanAPI/DhanAPI.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "watch",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "watch",
+                "run",
+                "${workspaceFolder}/DhanAPI/DhanAPI.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "client-install",
+            "type": "shell",
+            "command": "npm install",
+            "options": {
+                "cwd": "${workspaceFolder}/DhanClient"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "client-start",
+            "type": "shell",
+            "command": "npx ng serve --port 4200",
+            "options": {
+                "cwd": "${workspaceFolder}/DhanClient"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "typescript",
+                "pattern": "$tsc",
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": {
+                        "regexp": "(.*?)"
+                    },
+                    "endsPattern": {
+                        "regexp": "Application bundle generation complete|Watch mode enabled"
+                    }
+                }
+            }
+        },
+        {
+            "label": "build-all",
+            "dependsOn": ["build-api", "client-start"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

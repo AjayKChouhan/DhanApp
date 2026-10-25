@@ -1,0 +1,22 @@
+<header class="topbar">
+  <div class="brand">Dhan<span>AI</span> Trading</div>
+  <nav class="main-nav">
+    <a routerLink="/login" routerLinkActive="active">Login</a>
+    <a routerLink="/positions" routerLinkActive="active">Positions</a>
+    <a routerLink="/orders" routerLinkActive="active">Orders</a>
+    <a routerLink="/trade" routerLinkActive="active">Trade</a>
+    <a routerLink="/ip-setup" routerLinkActive="active">IP Setup</a>
+  </nav>
+  <button class="settings-toggle" (click)="togglePanel()">Settings</button>
+</header>
+<div class="settings-panel" [class.open]="panelOpen">
+  <div class="field">
+    <label for="apiBaseUrlInput">API Base URL</label>
+    <input id="apiBaseUrlInput" type="text" placeholder="http://localhost:5050/api/dhantrading" [(ngModel)]="baseUrl" />
+  </div>
+  <div class="field">
+    <label for="apiKeyInput">API Key (optional)</label>
+    <input id="apiKeyInput" type="password" placeholder="X-Dhan-Api-Key" [(ngModel)]="apiKey" />
+  </div>
+  <button (click)="save()">Save</button>
+</div>

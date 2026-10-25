@@ -1,0 +1,22 @@
+@if (rows.length === 0) {
+  <div class="empty-state">No records.</div>
+} @else {
+  <table>
+    <thead>
+      <tr>
+        @for (col of columns; track col) {
+          <th>{{ col }}</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of rows; track $index) {
+        <tr>
+          @for (col of columns; track col) {
+            <td>{{ formatCell(row, col) }}</td>
+          }
+        </tr>
+      }
+    </tbody>
+  </table>
+}

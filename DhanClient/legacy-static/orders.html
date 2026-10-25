@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DhanAI Trading - Orders</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Dhan<span>AI</span> Trading</div>
+    <nav class="main-nav">
+      <a href="index.html" data-page="login">Login</a>
+      <a href="positions.html" data-page="positions">Positions</a>
+      <a href="orders.html" data-page="orders">Orders</a>
+      <a href="trade.html" data-page="trade">Trade</a>
+    </nav>
+    <button class="settings-toggle" id="settingsToggle">Settings</button>
+  </header>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="field">
+      <label for="apiBaseUrlInput">API Base URL</label>
+      <input id="apiBaseUrlInput" type="text" placeholder="http://localhost:5050/api/dhantrading" />
+    </div>
+    <div class="field">
+      <label for="apiKeyInput">API Key (optional)</label>
+      <input id="apiKeyInput" type="password" placeholder="X-Dhan-Api-Key" />
+    </div>
+    <button id="saveSettingsBtn">Save</button>
+  </div>
+
+  <main>
+    <section class="card">
+      <h2>Orders (Account-wise)</h2>
+      <div class="toolbar">
+        <button type="button" id="loadOrdersBtn">Load Orders</button>
+      </div>
+      <div id="ordersStatus" class="status-line"></div>
+      <div id="ordersContainer"></div>
+    </section>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/topbar.js"></script>
+  <script src="js/orders.js"></script>
+</body>
+</html>

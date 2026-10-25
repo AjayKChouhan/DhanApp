@@ -1,0 +1,61 @@
+<section class="card">
+  <h2>Positions (Account-wise)</h2>
+  <div class="toolbar">
+    <button type="button" [disabled]="loading" (click)="loadPositions()">Load Positions</button>
+  </div>
+  @if (statusMessage) {
+    <div class="status-line" [class.error]="statusIsError">{{ statusMessage }}</div>
+  }
+  @if (loading) {
+    <div class="empty-state">Loading accounts...</div>
+  } @else if (noAccounts) {
+    <div class="empty-state">No saved accounts yet. Add accounts and login first.</div>
+  } @else {
+    @for (block of blocks; track block.account.dhanClientId) {
+      <div class="account-block">
+        <h3>{{ block.account.accountName }} <span class="muted">({{ block.account.dhanClientId }})</span></h3>
+        @if (!block.success) {
+          <div class="status-line error">{{ block.errorMessage || 'Failed to load positions.' }}</div>
+        } @else if (block.rows.length === 0) {
+          <div class="empty-state">No open positions.</div>
+        } @else {
+          <table class="positions-grid">
+            <thead>
+              <tr>
+                <th>B/S</th>
+                <th>Name of Company</th>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Avg Price</th>
+                <th>LTP</th>
+                <th>P&amp;L</th>
+                <th>% Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of block.rows; track row.symbol) {
+                <tr>
+                  <td>
+                    <span class="badge" [class.buy]="row.side === 'BUY'" [class.sell]="row.side === 'SELL'">
+                      {{ row.side === 'BUY' ? 'B' : 'S' }}
+                    </span>
+                  </td>
+                  <td>{{ row.symbol }}</td>
+                  <td>{{ row.product }}</td>
+                  <td>{{ row.quantity }}</td>
+                  <td>{{ row.avgPrice | number:'1.2-2' }}</td>
+                  <td>{{ row.ltp !== null ? (row.ltp | number:'1.2-2') : '-' }}</td>
+                  <td [class.positive]="row.pnl > 0" [class.negative]="row.pnl < 0">{{ row.pnl | number:'1.2-2' }}</td>
+                  <td [class.positive]="(row.pctChange ?? 0) > 0" [class.negative]="(row.pctChange ?? 0) < 0">
+                    {{ row.pctChange !== null ? (row.pctChange | number:'1.2-2') + '%' : '-' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+    }
+  }
+</section>
+

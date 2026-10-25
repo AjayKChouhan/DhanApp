@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DhanAI Trading - Trade</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Dhan<span>AI</span> Trading</div>
+    <nav class="main-nav">
+      <a href="index.html" data-page="login">Login</a>
+      <a href="positions.html" data-page="positions">Positions</a>
+      <a href="orders.html" data-page="orders">Orders</a>
+      <a href="trade.html" data-page="trade">Trade</a>
+    </nav>
+    <button class="settings-toggle" id="settingsToggle">Settings</button>
+  </header>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="field">
+      <label for="apiBaseUrlInput">API Base URL</label>
+      <input id="apiBaseUrlInput" type="text" placeholder="http://localhost:5050/api/dhantrading" />
+    </div>
+    <div class="field">
+      <label for="apiKeyInput">API Key (optional)</label>
+      <input id="apiKeyInput" type="password" placeholder="X-Dhan-Api-Key" />
+    </div>
+    <button id="saveSettingsBtn">Save</button>
+  </div>
+
+  <main>
+    <div class="trade-page-header">
+      <div class="trade-page-title">
+        <span class="trade-eyebrow">ORDER TERMINAL</span>
+        <h1>Buy / Sell Futures</h1>
+        <p class="muted">Build your order, review the details, and submit it to your selected accounts.</p>
+      </div>
+      <section class="card trade-account-card">
+        <div class="trade-account-heading">
+          <div>
+            <h2>Order accounts</h2>
+            <p class="muted">Select where this order will be placed</p>
+          </div>
+          <span class="trade-selection-count" id="selectedAccountCount">0 selected</span>
+        </div>
+        <div class="trade-account-actions">
+          <button type="button" class="secondary" id="selectAllAccountsBtn">Select all</button>
+          <button type="button" class="secondary" id="clearAccountsBtn">Clear</button>
+        </div>
+        <div id="tradeAccounts" class="trade-account-list">
+          <div class="empty-state">Loading accounts...</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card trade-order-card">
+      <div class="trade-section-heading">
+        <div>
+          <h2>Build your order</h2>
+          <p class="muted">Choose an exchange and add one or more futures contracts.</p>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom: 1rem;">
+        <label for="instrumentFilter">Search instrument</label>
+        <input id="instrumentFilter" type="text" placeholder="Type symbol e.g. NIFTY, RELIANCE..." />
+      </div>
+
+      <div class="trade-form">
+        <div class="field">
+          <label for="instrumentSelect">Instrument</label>
+          <select id="instrumentSelect"></select>
+        </div>
+        <div class="field">
+          <label for="lotSizeInput">Lot Size</label>
+          <input id="lotSizeInput" type="number" readonly />
+        </div>
+        <div class="field">
+          <label for="lotsInput">Lots</label>
+          <input id="lotsInput" type="number" min="1" value="1" />
+        </div>
+        <div class="field">
+          <label>Transaction Type</label>
+          <div class="transaction-toggle">
+            <button type="button" class="buy active" id="buyBtn" data-type="BUY">BUY</button>
+            <button type="button" class="sell" id="sellBtn" data-type="SELL">SELL</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" id="placeOrderBtn">Place Order</button>
+        </div>
+      </div>
+
+      <div id="tradeStatus" class="status-line"></div>
+    </section>
+
+    <section class="card">
+      <div class="trade-section-heading">
+        <div>
+          <h2>Order results</h2>
+          <p class="muted">Submission status for each selected account.</p>
+        </div>
+      </div>
+      <div id="orderResultsTable"></div>
+    </section>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/topbar.js"></script>
+  <script src="js/trade.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DhanAPI/DhanAPI.csproj" />
+  <Project Path="DhanService/DhanService.csproj" />
+</Solution>

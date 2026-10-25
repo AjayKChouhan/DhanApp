@@ -1,0 +1,201 @@
+<div class="trade-page-header">
+  <div class="trade-page-title">
+    <span class="trade-eyebrow">ORDER TERMINAL</span>
+    <h1>Buy / Sell Futures</h1>
+    <p class="muted">Build your order, review the details, and submit it to your selected accounts.</p>
+  </div>
+  <section class="card trade-account-card" aria-labelledby="tradeAccountsHeading">
+    <div class="trade-account-heading">
+      <div>
+        <h2 id="tradeAccountsHeading">Order accounts</h2>
+        <p class="muted">Select where this order will be placed</p>
+      </div>
+      @if (accounts.length > 0) {
+        <span class="trade-selection-count">{{ selectedAccountIds.length }} selected</span>
+      }
+    </div>
+    @if (accountsError) {
+      <div class="status-line error">{{ accountsError }}</div>
+      <button type="button" class="secondary" [disabled]="accountsLoading" (click)="loadAccounts()">Retry</button>
+    } @else if (accountsLoading) {
+      <div class="empty-state">Loading accounts...</div>
+    } @else if (accounts.length === 0) {
+      <div class="empty-state">No accounts saved yet. Add accounts before placing orders.</div>
+    } @else {
+      <div class="trade-account-actions">
+        <button type="button" class="secondary" [disabled]="placingOrder" (click)="selectAllAccounts()">Select all</button>
+        <button type="button" class="secondary" [disabled]="placingOrder" (click)="clearAccountSelection()">Clear</button>
+      </div>
+      <div class="trade-account-list">
+        @for (account of accounts; track account.dhanClientId) {
+          <label class="trade-account-option" [class.selected]="isAccountSelected(account.dhanClientId)">
+            <input
+              type="checkbox"
+              [disabled]="placingOrder"
+              [ngModel]="isAccountSelected(account.dhanClientId)"
+              (ngModelChange)="setAccountSelected(account.dhanClientId, $event)"
+            />
+            <span class="trade-account-details">
+              <span class="trade-account-name">{{ account.accountName }}</span>
+              <span class="trade-account-id">{{ account.dhanClientId }}</span>
+            </span>
+            <span class="trade-account-status" [class.connected]="account.isConnected">
+              <span class="trade-status-dot"></span>
+              {{ account.isConnected ? 'Connected' : 'Offline' }}
+            </span>
+          </label>
+        }
+      </div>
+    }
+  </section>
+</div>
+
+<section class="card trade-order-card">
+  <div class="trade-section-heading">
+    <div>
+      <h2>Build your order</h2>
+      <p class="muted">Choose an exchange and add one or more futures contracts.</p>
+    </div>
+  </div>
+  <div class="field exchange-field">
+    <label>Exchange</label>
+    <div class="exchange-toggle">
+      @for (exchange of exchanges; track exchange) {
+        <label class="exchange-option">
+          <input
+            type="radio"
+            name="exchange"
+            [value]="exchange"
+            [(ngModel)]="selectedExchange"
+            (ngModelChange)="onExchangeChange()"
+          />
+          {{ exchange }}
+        </label>
+      }
+    </div>
+  </div>
+
+  <div class="field autocomplete-field">
+    <label for="instrumentSearch">Search instrument</label>
+    <input
+      id="instrumentSearch"
+      type="text"
+      autocomplete="off"
+      [disabled]="instrumentsLoading"
+      [placeholder]="instrumentsLoading ? 'Loading ' + selectedExchange + ' futures instruments...' : 'Type symbol e.g. NIFTY, RELIANCE...'"
+      [(ngModel)]="searchTerm"
+      (ngModelChange)="onSearchChange()"
+      (focus)="onSearchChange()"
+    />
+    @if (showSuggestions) {
+      <ul class="autocomplete-list">
+        @for (instrument of searchResults; track instrument.securityId) {
+          <li (click)="selectInstrument(instrument)">{{ describeInstrument(instrument) }}</li>
+        }
+      </ul>
+    }
+  </div>
+
+  @if (tradeStatusMessage) {
+    <div class="status-line" [class.error]="tradeStatusIsError" [class.success]="!tradeStatusIsError">{{ tradeStatusMessage }}</div>
+  }
+
+  @if (rows.length === 0) {
+    <div class="empty-state">No instruments added yet. Search above and select one to add it here.</div>
+  } @else {
+    <table class="trade-grid">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Name of Company</th>
+          <th>Lots</th>
+          <th>Quantity</th>
+          <th>B/S</th>
+          <th>Order Type</th>
+          <th>Price</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows; track row.instrument.securityId) {
+          <tr>
+            <td><input type="checkbox" [(ngModel)]="row.selected" /></td>
+            <td>{{ describeInstrument(row.instrument) }}</td>
+            <td><input type="number" min="1" class="lots-input" [(ngModel)]="row.lots" /></td>
+            <td>{{ quantityFor(row) }}</td>
+            <td>
+              <div class="transaction-toggle">
+                <button type="button" class="buy" [class.active]="row.transactionType === 'BUY'" (click)="setTransactionType(row, 'BUY')">BUY</button>
+                <button type="button" class="sell" [class.active]="row.transactionType === 'SELL'" (click)="setTransactionType(row, 'SELL')">SELL</button>
+              </div>
+            </td>
+            <td>
+              <div class="transaction-toggle">
+                <button type="button" [class.active]="row.orderType === 'MARKET'" (click)="setOrderType(row, 'MARKET')">MARKET</button>
+                <button type="button" [class.active]="row.orderType === 'LIMIT'" (click)="setOrderType(row, 'LIMIT')">LIMIT</button>
+              </div>
+            </td>
+            <td>
+              @if (row.orderType === 'LIMIT') {
+                @if (row.loadingPrice) {
+                  <span class="muted">Loading...</span>
+                } @else {
+                  <input type="number" min="0" step="0.05" class="price-input" [(ngModel)]="row.price" />
+                }
+              } @else {
+                <span class="muted">-</span>
+              }
+            </td>
+            <td><button type="button" class="remove-btn" (click)="removeRow(row)">Remove</button></td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <div class="trade-submit-row">
+      <span class="muted">{{ selectedAccountIds.length }} account(s) selected</span>
+      <button type="button" [disabled]="placingOrder || accountsLoading || accounts.length === 0" (click)="placeAllOrders()">
+        {{ placingOrder ? 'Submitting...' : 'Place All Orders' }}
+      </button>
+    </div>
+  }
+</section>
+
+<section class="card">
+  <div class="trade-section-heading">
+    <div>
+      <h2>Order results</h2>
+      <p class="muted">Submission status for each selected account.</p>
+    </div>
+  </div>
+  @if (orderResults.length === 0) {
+    <div class="empty-state">No records.</div>
+  } @else {
+    <table>
+      <thead>
+        <tr>
+          <th>Name of Company</th>
+          <th>Account Name</th>
+          <th>Dhan Client ID</th>
+          <th>Result</th>
+          <th>Order Id</th>
+          <th>Status</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of orderResults; track row.dhanClientId + row.symbol) {
+          <tr>
+            <td>{{ row.symbol }}</td>
+            <td>{{ row.accountName }}</td>
+            <td>{{ row.dhanClientId }}</td>
+            <td><span class="badge" [class.ok]="row.success" [class.fail]="!row.success">{{ row.success ? 'SUCCESS' : 'FAILED' }}</span></td>
+            <td>{{ row.orderId || '' }}</td>
+            <td>{{ row.orderStatus || '' }}</td>
+            <td>{{ row.errorMessage || '' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</section>
