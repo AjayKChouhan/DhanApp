@@ -107,8 +107,31 @@ namespace DhanService.Services
             }
 
             var reason = GetText(data, "ReasonDescription");
+            var existingOrder = await _store.GetOrderAsync(clientId, masterOrderId, cancellationToken);
+            _logger.LogInformation(
+                "Received master order update for {MasterOrderId}: status {Status}, quantity {Quantity}, existing copy record {HasCopyRecord}",
+                masterOrderId,
+                status,
+                GetText(data, "Quantity"),
+                existingOrder is not null);
             var existingUpdated = await _store.UpdateMasterOrderStatusAsync(
                 clientId, masterOrderId, status, reason, cancellationToken);
+
+            if (existingOrder is not null)
+            {
+                var updatedOrder = CreateOrderRecord(data, existingOrder, status);
+                if (TerminalMasterStatuses.Contains(status))
+                {
+                    await CancelChildOrdersAsync(existingOrder, cancellationToken);
+                }
+                else
+                {
+                    await ModifyChildOrdersAsync(existingOrder, updatedOrder, cancellationToken);
+                }
+                await _store.UpdateMasterOrderDetailsAsync(updatedOrder, cancellationToken);
+                return;
+            }
+
             if (!CopyableMasterStatuses.Contains(status))
             {
                 if (!existingUpdated && TerminalMasterStatuses.Contains(status))
@@ -266,6 +289,146 @@ namespace DhanService.Services
 
             return order;
         }
+
+        private static CopyTradingOrderRecord CreateOrderRecord(
+            JsonElement data, CopyTradingOrderRecord existingOrder, string status)
+        {
+            var updated = CloneOrder(existingOrder);
+            updated.TradingSymbol = FirstNonEmpty(
+                GetText(data, "DisplayName"),
+                GetText(data, "Symbol"),
+                GetText(data, "SecurityId"));
+            updated.SecurityId = GetText(data, "SecurityId");
+            updated.ExchangeSegment = MapExchangeSegment(GetText(data, "Exchange"), GetText(data, "Segment"));
+            updated.ProductType = MapProductType(GetText(data, "ProductName"), GetText(data, "Product"));
+            updated.TransactionType = MapTransactionType(GetText(data, "TxnType"));
+            updated.OrderType = MapOrderType(GetText(data, "OrderType"));
+            updated.Validity = MapValidity(GetText(data, "Validity"));
+            updated.Quantity = GetInteger(data, "Quantity");
+            updated.Price = GetDecimal(data, "Price");
+            updated.TriggerPrice = GetDecimal(data, "TriggerPrice");
+            updated.AfterMarketOrder = GetText(data, "OffMktFlag") == "1";
+            updated.DisclosedQuantity = GetInteger(data, "DiscQuantity");
+            updated.MasterOrderStatus = status;
+            updated.MasterOrderErrorMessage = GetText(data, "ReasonDescription");
+            return updated;
+        }
+
+        private async Task ModifyChildOrdersAsync(
+            CopyTradingOrderRecord existingOrder,
+            CopyTradingOrderRecord updatedOrder,
+            CancellationToken cancellationToken)
+        {
+            foreach (var child in existingOrder.Children)
+            {
+                if (string.IsNullOrWhiteSpace(child.OrderId) ||
+                    IsTerminalOrderStatus(child.OrderStatus) ||
+                    !IsModifiableOrderStatus(child.OrderStatus))
+                {
+                    continue;
+                }
+
+                var previousQuantity = child.MirroredQuantity ?? existingOrder.Quantity;
+                var previousOrderType = child.MirroredOrderType ?? existingOrder.OrderType;
+                var previousPrice = child.MirroredPrice ?? existingOrder.Price;
+                var previousTriggerPrice = child.MirroredTriggerPrice ?? existingOrder.TriggerPrice;
+                var previousValidity = child.MirroredValidity ?? existingOrder.Validity;
+                if (previousQuantity == updatedOrder.Quantity &&
+                    string.Equals(previousOrderType, updatedOrder.OrderType, StringComparison.OrdinalIgnoreCase) &&
+                    previousPrice == updatedOrder.Price &&
+                    previousTriggerPrice == updatedOrder.TriggerPrice &&
+                    string.Equals(previousValidity, updatedOrder.Validity, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                _logger.LogInformation(
+                    "Mirroring update for master order {MasterOrderId} to child {ClientId}: quantity {OldQuantity} -> {NewQuantity}, status {ChildStatus}",
+                    existingOrder.MasterOrderId,
+                    child.DhanClientId,
+                    previousQuantity,
+                    updatedOrder.Quantity,
+                    child.OrderStatus);
+
+                DhanOrderResultDto result;
+                if (!string.Equals(existingOrder.SecurityId, updatedOrder.SecurityId, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(existingOrder.ExchangeSegment, updatedOrder.ExchangeSegment, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(existingOrder.ProductType, updatedOrder.ProductType, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(existingOrder.TransactionType, updatedOrder.TransactionType, StringComparison.OrdinalIgnoreCase))
+                {
+                    result = FailedResult(child, "Dhan does not support changing instrument, exchange, product, or side on an existing order.");
+                }
+                else
+                {
+                    result = await _orderService.ModifyOrderAsync(new ModifyDhanOrderRequest
+                    {
+                        DhanClientId = child.DhanClientId,
+                        OrderId = child.OrderId,
+                        OrderType = updatedOrder.OrderType,
+                        Quantity = updatedOrder.Quantity,
+                        Price = updatedOrder.Price,
+                        TriggerPrice = updatedOrder.TriggerPrice,
+                        Validity = updatedOrder.Validity
+                    }, cancellationToken);
+                }
+
+                if (!result.Success)
+                {
+                    _logger.LogWarning("Could not mirror modification of master order {MasterOrderId} to child {ClientId}: {Error}",
+                        existingOrder.MasterOrderId, child.DhanClientId, result.ErrorMessage);
+                }
+                await _store.UpdateChildCopyActionAsync(
+                    existingOrder.MasterClientId,
+                    existingOrder.MasterOrderId,
+                    child.DhanClientId,
+                    "MODIFY",
+                    result,
+                    updatedOrder,
+                    cancellationToken);
+            }
+        }
+
+        private async Task CancelChildOrdersAsync(
+            CopyTradingOrderRecord masterOrder, CancellationToken cancellationToken)
+        {
+            foreach (var child in masterOrder.Children)
+            {
+                if (string.IsNullOrWhiteSpace(child.OrderId) || IsTerminalOrderStatus(child.OrderStatus))
+                {
+                    continue;
+                }
+
+                var result = await _orderService.CancelOrderAsync(
+                    child.DhanClientId, child.OrderId, cancellationToken);
+                if (!result.Success)
+                {
+                    _logger.LogWarning("Could not mirror cancellation of master order {MasterOrderId} to child {ClientId}: {Error}",
+                        masterOrder.MasterOrderId, child.DhanClientId, result.ErrorMessage);
+                }
+                await _store.UpdateChildCopyActionAsync(
+                    masterOrder.MasterClientId,
+                    masterOrder.MasterOrderId,
+                    child.DhanClientId,
+                    "CANCEL",
+                    result,
+                    cancellationToken: cancellationToken);
+            }
+        }
+
+        private static bool IsTerminalOrderStatus(string? status) =>
+            !string.IsNullOrWhiteSpace(status) &&
+            (TerminalMasterStatuses.Contains(status) ||
+             string.Equals(status, "TRADED", StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsModifiableOrderStatus(string? status) =>
+            string.IsNullOrWhiteSpace(status) ||
+            string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status, "TRANSIT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status, "PART_TRADED", StringComparison.OrdinalIgnoreCase);
+
+        private static CopyTradingOrderRecord CloneOrder(CopyTradingOrderRecord order) =>
+            JsonSerializer.Deserialize<CopyTradingOrderRecord>(JsonSerializer.Serialize(order))
+            ?? throw new InvalidDataException("Could not clone copy-trading order.");
 
         private async Task ProcessOrderAsync(CopyTradingOrderRecord order, CancellationToken cancellationToken)
         {

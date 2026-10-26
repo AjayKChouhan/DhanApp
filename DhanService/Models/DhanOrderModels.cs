@@ -37,6 +37,17 @@ namespace DhanService.Models
         public string? ErrorMessage { get; set; }
     }
 
+    public class ModifyDhanOrderRequest
+    {
+        public string DhanClientId { get; set; } = string.Empty;
+        public string OrderId { get; set; } = string.Empty;
+        public string OrderType { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal Price { get; set; }
+        public decimal TriggerPrice { get; set; }
+        public string Validity { get; set; } = string.Empty;
+    }
+
     /// <summary>Per-account result of a login/token-generation attempt.</summary>
     public class DhanLoginResultDto
     {

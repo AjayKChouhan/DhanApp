@@ -14,6 +14,12 @@ namespace DhanService.Services
         Task<IReadOnlyList<DhanOrderResultDto>> PlaceOrderForAccountsAsync(
             PlaceDhanOrderRequest request, CancellationToken cancellationToken = default);
 
+        Task<DhanOrderResultDto> ModifyOrderAsync(
+            ModifyDhanOrderRequest request, CancellationToken cancellationToken = default);
+
+        Task<DhanOrderResultDto> CancelOrderAsync(
+            string dhanClientId, string orderId, CancellationToken cancellationToken = default);
+
         /// <summary>
         /// Fetches the order book for one saved account from Dhan, reusing (or refreshing)
         /// its cached access token from the token store.
@@ -127,6 +133,120 @@ namespace DhanService.Services
             return await Task.WhenAll(tasks);
         }
 
+        public async Task<DhanOrderResultDto> ModifyOrderAsync(
+            ModifyDhanOrderRequest request, CancellationToken cancellationToken = default)
+        {
+            var account = await FindAccountAsync(request.DhanClientId, cancellationToken);
+            if (account is null)
+            {
+                return FailedOrderResult(request.DhanClientId, "No saved account found.");
+            }
+
+            try
+            {
+                var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+                if (token is null)
+                {
+                    return FailedOrderResult(account.DhanClientId, "Could not obtain a valid access token (login failed).", account.AccountName);
+                }
+
+                var payload = new
+                {
+                    dhanClientId = account.DhanClientId,
+                    orderId = request.OrderId,
+                    orderType = request.OrderType,
+                    quantity = request.Quantity.ToString(),
+                    price = request.Price.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    disclosedQuantity = "",
+                    triggerPrice = request.TriggerPrice > 0
+                        ? request.TriggerPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        : "",
+                    validity = request.Validity
+                };
+                using var httpRequest = new HttpRequestMessage(
+                    HttpMethod.Put,
+                    $"{_options.ApiBaseUrl.TrimEnd('/')}/v2/orders/{Uri.EscapeDataString(request.OrderId)}");
+                httpRequest.Headers.Add("access-token", token.AccessToken);
+                httpRequest.Content = JsonContent.Create(payload);
+
+                using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Dhan order modification failed for {Account} ({ClientId}): {Status} {Body}",
+                        account.AccountName, account.DhanClientId, response.StatusCode, body);
+                    return FailedOrderResult(account.DhanClientId, $"{(int)response.StatusCode}: {body}", account.AccountName);
+                }
+
+                var parsed = JsonSerializer.Deserialize<PlaceOrderResponse>(
+                    body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return new DhanOrderResultDto
+                {
+                    AccountName = account.AccountName,
+                    DhanClientId = account.DhanClientId,
+                    Success = true,
+                    OrderId = parsed?.OrderId ?? request.OrderId,
+                    OrderStatus = parsed?.OrderStatus
+                };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Unexpected error modifying Dhan order {OrderId} for {ClientId}",
+                    request.OrderId, request.DhanClientId);
+                return FailedOrderResult(request.DhanClientId, ex.Message, account.AccountName);
+            }
+        }
+
+        public async Task<DhanOrderResultDto> CancelOrderAsync(
+            string dhanClientId, string orderId, CancellationToken cancellationToken = default)
+        {
+            var account = await FindAccountAsync(dhanClientId, cancellationToken);
+            if (account is null)
+            {
+                return FailedOrderResult(dhanClientId, "No saved account found.");
+            }
+
+            try
+            {
+                var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+                if (token is null)
+                {
+                    return FailedOrderResult(account.DhanClientId, "Could not obtain a valid access token (login failed).", account.AccountName);
+                }
+
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    $"{_options.ApiBaseUrl.TrimEnd('/')}/v2/orders/{Uri.EscapeDataString(orderId)}");
+                request.Headers.Add("access-token", token.AccessToken);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Dhan order cancellation failed for {Account} ({ClientId}): {Status} {Body}",
+                        account.AccountName, account.DhanClientId, response.StatusCode, body);
+                    return FailedOrderResult(account.DhanClientId, $"{(int)response.StatusCode}: {body}", account.AccountName);
+                }
+
+                var parsed = string.IsNullOrWhiteSpace(body)
+                    ? null
+                    : JsonSerializer.Deserialize<PlaceOrderResponse>(
+                        body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return new DhanOrderResultDto
+                {
+                    AccountName = account.AccountName,
+                    DhanClientId = account.DhanClientId,
+                    Success = true,
+                    OrderId = parsed?.OrderId ?? orderId,
+                    OrderStatus = parsed?.OrderStatus ?? "CANCELLED"
+                };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Unexpected error cancelling Dhan order {OrderId} for {ClientId}", orderId, dhanClientId);
+                return FailedOrderResult(dhanClientId, ex.Message, account.AccountName);
+            }
+        }
+
         public async Task<DhanOrdersResultDto> GetOrdersAsync(string dhanClientId, CancellationToken cancellationToken = default)
         {
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
@@ -191,6 +311,23 @@ namespace DhanService.Services
                 };
             }
         }
+
+        private async Task<DhanAccountCredential?> FindAccountAsync(
+            string dhanClientId, CancellationToken cancellationToken)
+        {
+            var accounts = await _accountStore.GetAllAsync(cancellationToken);
+            return accounts.FirstOrDefault(account =>
+                string.Equals(account.DhanClientId, dhanClientId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static DhanOrderResultDto FailedOrderResult(
+            string clientId, string error, string accountName = "") => new()
+        {
+            AccountName = accountName,
+            DhanClientId = clientId,
+            Success = false,
+            ErrorMessage = error
+        };
 
         private async Task<DhanOrderResultDto> PlaceOrderForAccountAsync(
             DhanAccountCredential account,

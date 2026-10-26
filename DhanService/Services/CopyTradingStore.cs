@@ -14,12 +14,15 @@ namespace DhanService.Services
         Task<CopyTradingSettings> GetSettingsAsync(CancellationToken cancellationToken = default);
         Task SaveSettingsAsync(CopyTradingSettings settings, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<CopyTradingOrderRecord>> GetRecentOrdersAsync(CancellationToken cancellationToken = default);
+        Task<CopyTradingOrderRecord?> GetOrderAsync(string masterClientId, string masterOrderId, CancellationToken cancellationToken = default);
         Task<CopyTradingOrderRecord?> TryCreateOrderAsync(CopyTradingOrderRecord order, CancellationToken cancellationToken = default);
         Task<bool> UpdateMasterOrderStatusAsync(string masterClientId, string masterOrderId, string status, string? errorMessage, CancellationToken cancellationToken = default);
+        Task UpdateMasterOrderDetailsAsync(CopyTradingOrderRecord update, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<CopyTradingOrderRecord>> GetReadyOrdersAsync(CancellationToken cancellationToken = default);
         Task<bool> TryStartChildCopyAsync(string masterClientId, string masterOrderId, string childClientId, CancellationToken cancellationToken = default);
         Task SkipChildCopyAsync(string masterClientId, string masterOrderId, string childClientId, string reason, CancellationToken cancellationToken = default);
         Task UpdateChildSubmissionAsync(string masterClientId, string masterOrderId, string childClientId, DhanOrderResultDto result, bool permanentFailure = false, CancellationToken cancellationToken = default);
+        Task UpdateChildCopyActionAsync(string masterClientId, string masterOrderId, string childClientId, string action, DhanOrderResultDto result, CopyTradingOrderRecord? mirroredOrder = null, CancellationToken cancellationToken = default);
         Task UpdateChildOrderStatusAsync(string clientId, string correlationId, string orderId, string status, string? errorMessage, CancellationToken cancellationToken = default);
         Task<bool> RetryChildCopyAsync(string masterClientId, string masterOrderId, string childClientId, CancellationToken cancellationToken = default);
         Task ResetInterruptedCopiesAsync(CancellationToken cancellationToken = default);
@@ -96,6 +99,22 @@ namespace DhanService.Services
             }
         }
 
+        public async Task<CopyTradingOrderRecord?> GetOrderAsync(
+            string masterClientId, string masterOrderId, CancellationToken cancellationToken = default)
+        {
+            await _lock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureLoadedAsync(cancellationToken);
+                var order = FindOrder(masterClientId, masterOrderId);
+                return order is null ? null : Clone(order);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
         public async Task<CopyTradingOrderRecord?> TryCreateOrderAsync(CopyTradingOrderRecord order, CancellationToken cancellationToken = default)
         {
             await _lock.WaitAsync(cancellationToken);
@@ -143,6 +162,39 @@ namespace DhanService.Services
                 order.MasterOrderErrorMessage = errorMessage;
                 await PersistAsync(cancellationToken);
                 return true;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task UpdateMasterOrderDetailsAsync(
+            CopyTradingOrderRecord update, CancellationToken cancellationToken = default)
+        {
+            await _lock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureLoadedAsync(cancellationToken);
+                var order = FindOrder(update.MasterClientId, update.MasterOrderId);
+                if (order is null)
+                {
+                    return;
+                }
+
+                order.TradingSymbol = update.TradingSymbol;
+                order.SecurityId = update.SecurityId;
+                order.ExchangeSegment = update.ExchangeSegment;
+                order.ProductType = update.ProductType;
+                order.TransactionType = update.TransactionType;
+                order.OrderType = update.OrderType;
+                order.Validity = update.Validity;
+                order.Quantity = update.Quantity;
+                order.Price = update.Price;
+                order.TriggerPrice = update.TriggerPrice;
+                order.MasterOrderStatus = update.MasterOrderStatus;
+                order.MasterOrderErrorMessage = update.MasterOrderErrorMessage;
+                await PersistAsync(cancellationToken);
             }
             finally
             {
@@ -214,6 +266,60 @@ namespace DhanService.Services
                     child.OrderStatus = result.OrderStatus;
                 }
                 child.ErrorMessage = result.ErrorMessage;
+                if (result.Success)
+                {
+                    var order = FindOrder(masterClientId, masterOrderId);
+                    if (order is not null)
+                    {
+                        child.MirroredQuantity = order.Quantity;
+                        child.MirroredOrderType = order.OrderType;
+                        child.MirroredPrice = order.Price;
+                        child.MirroredTriggerPrice = order.TriggerPrice;
+                        child.MirroredValidity = order.Validity;
+                    }
+                }
+                await PersistAsync(cancellationToken);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task UpdateChildCopyActionAsync(
+            string masterClientId,
+            string masterOrderId,
+            string childClientId,
+            string action,
+            DhanOrderResultDto result,
+            CopyTradingOrderRecord? mirroredOrder = null,
+            CancellationToken cancellationToken = default)
+        {
+            await _lock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureLoadedAsync(cancellationToken);
+                var child = FindChild(masterClientId, masterOrderId, childClientId);
+                if (child is null)
+                {
+                    throw new InvalidOperationException("Copy-trading child record was not found.");
+                }
+
+                child.ErrorMessage = result.ErrorMessage;
+                if (result.Success)
+                {
+                    child.OrderId = result.OrderId ?? child.OrderId;
+                    child.OrderStatus = result.OrderStatus;
+                    child.LastStatusUpdateUtc = DateTime.UtcNow;
+                    if (string.Equals(action, "MODIFY", StringComparison.OrdinalIgnoreCase) && mirroredOrder is not null)
+                    {
+                        child.MirroredQuantity = mirroredOrder.Quantity;
+                        child.MirroredOrderType = mirroredOrder.OrderType;
+                        child.MirroredPrice = mirroredOrder.Price;
+                        child.MirroredTriggerPrice = mirroredOrder.TriggerPrice;
+                        child.MirroredValidity = mirroredOrder.Validity;
+                    }
+                }
                 await PersistAsync(cancellationToken);
             }
             finally

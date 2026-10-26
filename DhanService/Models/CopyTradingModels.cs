@@ -47,6 +47,11 @@ namespace DhanService.Models
         public string? OrderStatus { get; set; }
         public DateTime? LastStatusUpdateUtc { get; set; }
         public string? ErrorMessage { get; set; }
+        public int? MirroredQuantity { get; set; }
+        public string? MirroredOrderType { get; set; }
+        public decimal? MirroredPrice { get; set; }
+        public decimal? MirroredTriggerPrice { get; set; }
+        public string? MirroredValidity { get; set; }
     }
 
     public class CopyTradingDashboardDto

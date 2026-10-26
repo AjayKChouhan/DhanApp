@@ -49,7 +49,9 @@ ng test
 Open **Copy Trading** to choose a saved master account, enable child accounts, and monitor per-account order results.
 The API listens to Dhan's [Live Order Update WebSocket](https://dhanhq.co/docs/v2/order-update/), which documents updates
 for an individual account's orders irrespective of the platform used to place them. The API must remain running for live
-copying. Bracket/cover, after-market, and disclosed-quantity orders are reported as unsupported.
+copying. Supported pending-order modifications (price, quantity, order type, and validity) and cancellations are mirrored
+to the child orders using Dhan's order APIs. They can fail if a child order is no longer pending or Dhan rejects the change.
+Bracket/cover, after-market, and disclosed-quantity orders are reported as unsupported.
 
 Copy settings and activity are stored in the existing encrypted local JSON data store under
 `DhanAPI/App_Data/DhanTrading`; this project currently does not use a SQL database.

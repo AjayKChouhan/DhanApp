@@ -114,8 +114,10 @@
   <p>
     Dhan's <a href="https://dhanhq.co/docs/v2/order-update/" target="_blank" rel="noopener noreferrer">Live Order Update WebSocket documentation</a>
     says an individual account receives updates for orders placed through any platform. This includes orders placed in Dhan's app.
-    The API monitors the configured master and copies supported BUY/SELL order types to enabled children. Bracket/cover,
-    after-market, and disclosed-quantity orders are reported as unsupported rather than silently altered.
+    The API monitors the configured master and copies supported BUY/SELL orders to enabled children, including supported
+    pending-order price/quantity/type/validity changes and cancellations. These updates only apply when the corresponding
+    child order is still pending and Dhan accepts the request. Bracket/cover, after-market, and disclosed-quantity orders
+    are reported as unsupported rather than silently altered.
   </p>
   <p class="muted">
     Copying only runs while this API is online and connected. Each observed master order is recorded once; child orders use a stable
@@ -132,7 +134,7 @@
   <div class="trade-section-heading">
     <div>
       <h2>Copy activity</h2>
-      <p class="muted">Master orders and per-child submission and broker status.</p>
+      <p class="muted">Master orders and each child’s submission, modification, cancellation, and broker status.</p>
     </div>
     <button type="button" class="secondary" [disabled]="loading" (click)="loadDashboard()">
       {{ loading ? 'Refreshing...' : 'Refresh' }}
