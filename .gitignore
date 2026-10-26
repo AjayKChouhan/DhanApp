@@ -29,6 +29,7 @@
 **/accounts.json
 **/tokens.json
 **/dhan-accounts.local.json
+**/copy-trading.json
 
 # IDE and operating system files
 .idea/
