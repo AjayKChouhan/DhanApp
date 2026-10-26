@@ -6,19 +6,24 @@ namespace DhanService.Models
     public class PlaceDhanOrderRequest
     {
         public List<string> AccountClientIds { get; set; } = new();
+        public string? CorrelationId { get; set; }
         public string SecurityId { get; set; } = string.Empty;
         public string TradingSymbol { get; set; } = string.Empty;
+        public string ExchangeSegment { get; set; } = "NSE_FNO";
+        public string ProductType { get; set; } = "MARGIN";
+        public string Validity { get; set; } = "DAY";
         public int LotSize { get; set; }
         public int Lots { get; set; }
 
         /// <summary>"BUY" or "SELL".</summary>
         public string TransactionType { get; set; } = string.Empty;
 
-        /// <summary>"MARKET" or "LIMIT". Defaults to "MARKET".</summary>
+        /// <summary>"MARKET", "LIMIT", "STOP_LOSS" or "STOP_LOSS_MARKET". Defaults to "MARKET".</summary>
         public string OrderType { get; set; } = "MARKET";
 
         /// <summary>Limit price. Required (and must be greater than zero) when OrderType is "LIMIT".</summary>
         public decimal? Price { get; set; }
+        public decimal? TriggerPrice { get; set; }
     }
 
     /// <summary>Per-account result of a fanned-out order placement.</summary>

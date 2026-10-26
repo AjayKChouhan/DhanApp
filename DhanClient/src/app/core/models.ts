@@ -40,13 +40,18 @@ export interface FuturesInstrument {
 
 export interface PlaceOrderRequest {
   accountClientIds: string[];
+  correlationId?: string;
   securityId: string;
   tradingSymbol: string;
+  exchangeSegment?: string;
+  productType?: string;
+  validity?: string;
   lotSize: number;
   lots: number;
   transactionType: 'BUY' | 'SELL';
-  orderType: 'MARKET' | 'LIMIT';
+  orderType: 'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'STOP_LOSS_MARKET';
   price?: number | null;
+  triggerPrice?: number | null;
 }
 
 export interface OrderResult {
@@ -56,6 +61,56 @@ export interface OrderResult {
   orderId?: string | null;
   orderStatus?: string | null;
   errorMessage?: string | null;
+}
+
+export interface CopyTradingChildSetting {
+  dhanClientId: string;
+  enabled: boolean;
+}
+
+export interface CopyTradingSettings {
+  enabled: boolean;
+  masterClientId: string | null;
+  children: CopyTradingChildSetting[];
+}
+
+export interface CopyTradingChildOrder {
+  dhanClientId: string;
+  accountName: string;
+  correlationId: string;
+  copyState: 'READY' | 'SUBMITTING' | 'SUBMITTED' | 'FAILED' | string;
+  orderId?: string | null;
+  orderStatus?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface CopyTradingOrder {
+  masterClientId: string;
+  masterAccountName: string;
+  masterOrderId: string;
+  tradingSymbol: string;
+  securityId: string;
+  exchangeSegment: string;
+  productType: string;
+  transactionType: string;
+  orderType: string;
+  validity: string;
+  quantity: number;
+  price: number;
+  triggerPrice: number;
+  masterOrderStatus: string;
+  masterOrderErrorMessage?: string | null;
+  source: string;
+  receivedAtUtc: string;
+  children: CopyTradingChildOrder[];
+}
+
+export interface CopyTradingDashboard {
+  settings: CopyTradingSettings;
+  accounts: DhanAccountStatus[];
+  orders: CopyTradingOrder[];
+  listenerConnected: boolean;
+  listenerMessage?: string | null;
 }
 
 // Raw shape of a single entry from Dhan's /v2/positions response

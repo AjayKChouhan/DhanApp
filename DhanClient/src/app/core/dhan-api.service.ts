@@ -9,6 +9,8 @@ import {
   DhanLoginResult,
   DhanLtpResult,
   DhanSetIpResult,
+  CopyTradingDashboard,
+  CopyTradingSettings,
   FuturesInstrument,
   OrderResult,
   PlaceOrderRequest
@@ -99,6 +101,20 @@ export class DhanApiService {
 
   placeOrder(order: PlaceOrderRequest): Promise<OrderResult[]> {
     return this.post<OrderResult[]>('/order', order);
+  }
+
+  getCopyTradingDashboard(): Promise<CopyTradingDashboard> {
+    return this.get<CopyTradingDashboard>('/copy-trading');
+  }
+
+  saveCopyTradingSettings(settings: CopyTradingSettings): Promise<void> {
+    return this.post<void>('/copy-trading/settings', settings);
+  }
+
+  retryCopyOrder(masterClientId: string, masterOrderId: string, childClientId: string): Promise<void> {
+    return this.post<void>(
+      `/copy-trading/orders/${encodeURIComponent(masterClientId)}/${encodeURIComponent(masterOrderId)}/children/${encodeURIComponent(childClientId)}/retry`
+    );
   }
 
   setStaticIp(ip: string, ipFlag: 'PRIMARY' | 'SECONDARY'): Promise<DhanSetIpResult[]> {

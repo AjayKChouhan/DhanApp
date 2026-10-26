@@ -25,6 +25,7 @@ namespace DhanAPI.Controllers
         private readonly IDhanOrderService _orderService;
         private readonly IDhanPositionService _positionService;
         private readonly IDhanMarketQuoteService _marketQuoteService;
+        private readonly ICopyTradingStore _copyTradingStore;
 
         public DhanTradingController(
             ILogger<DhanTradingController> logger,
@@ -34,7 +35,8 @@ namespace DhanAPI.Controllers
             IDhanInstrumentService instrumentService,
             IDhanOrderService orderService,
             IDhanPositionService positionService,
-            IDhanMarketQuoteService marketQuoteService)
+            IDhanMarketQuoteService marketQuoteService,
+            ICopyTradingStore copyTradingStore)
         {
             _logger = logger;
             _accountStore = accountStore;
@@ -44,6 +46,7 @@ namespace DhanAPI.Controllers
             _orderService = orderService;
             _positionService = positionService;
             _marketQuoteService = marketQuoteService;
+            _copyTradingStore = copyTradingStore;
         }
 
         /// <summary>Saves (replaces) the full list of Dhan account credentials.</summary>
@@ -264,15 +267,37 @@ namespace DhanAPI.Controllers
             }
 
             var orderType = string.IsNullOrWhiteSpace(request.OrderType) ? "MARKET" : request.OrderType;
-            if (!string.Equals(orderType, "MARKET", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase))
+            if (!new[] { "MARKET", "LIMIT", "STOP_LOSS", "STOP_LOSS_MARKET" }
+                    .Contains(orderType, StringComparer.OrdinalIgnoreCase))
             {
-                return BadRequest("orderType must be MARKET or LIMIT.");
+                return BadRequest("orderType must be MARKET, LIMIT, STOP_LOSS, or STOP_LOSS_MARKET.");
             }
 
-            if (string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase) && (request.Price is null || request.Price <= 0))
+            if ((string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(orderType, "STOP_LOSS", StringComparison.OrdinalIgnoreCase)) &&
+                (request.Price is null || request.Price <= 0))
             {
-                return BadRequest("price must be greater than zero for LIMIT orders.");
+                return BadRequest("price must be greater than zero for LIMIT and STOP_LOSS orders.");
+            }
+
+            if ((string.Equals(orderType, "STOP_LOSS", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(orderType, "STOP_LOSS_MARKET", StringComparison.OrdinalIgnoreCase)) &&
+                (request.TriggerPrice is null || request.TriggerPrice <= 0))
+            {
+                return BadRequest("triggerPrice must be greater than zero for stop-loss orders.");
+            }
+
+            var copySettings = await _copyTradingStore.GetSettingsAsync(cancellationToken);
+            if (copySettings.Enabled &&
+                request.AccountClientIds.Contains(copySettings.MasterClientId, StringComparer.OrdinalIgnoreCase))
+            {
+                var enabledChildren = copySettings.Children
+                    .Where(child => child.Enabled)
+                    .Select(child => child.DhanClientId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                request.AccountClientIds = request.AccountClientIds
+                    .Where(clientId => !enabledChildren.Contains(clientId))
+                    .ToList();
             }
 
             _logger.LogInformation("Placing {TransactionType} {OrderType} order: {Symbol} x{Lots} lots for {AccountCount} selected account(s)",

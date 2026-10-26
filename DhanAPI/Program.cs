@@ -20,6 +20,10 @@ builder.Services.AddHttpClient<IDhanInstrumentService, DhanInstrumentService>();
 builder.Services.AddHttpClient<IDhanOrderService, DhanOrderService>();
 builder.Services.AddHttpClient<IDhanPositionService, DhanPositionService>();
 builder.Services.AddHttpClient<IDhanMarketQuoteService, DhanMarketQuoteService>();
+builder.Services.AddSingleton<ICopyTradingStore, CopyTradingStore>();
+builder.Services.AddSingleton<CopyTradingRuntimeStatus>();
+builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();
+builder.Services.AddHostedService<DhanOrderUpdateWorker>();
 builder.Services.AddScoped<DhanApiKeyGuardFilter>();
 
 // CORS: the DhanClient is a static HTML/JS app served separately (e.g. file:// or a

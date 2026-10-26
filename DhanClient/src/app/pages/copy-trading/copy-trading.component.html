@@ -1,0 +1,202 @@
+<div class="copy-page-heading">
+  <div>
+    <span class="trade-eyebrow">AUTOMATION</span>
+    <h1>Copy Trading</h1>
+    <p class="muted">Choose a master account and the child accounts that should follow its orders.</p>
+  </div>
+  <div class="copy-listener-indicator" [class.connected]="listenerConnected">
+    <span class="trade-status-dot"></span>
+    {{ listenerConnected ? 'Order stream connected' : 'Order stream inactive' }}
+  </div>
+</div>
+
+@if (statusMessage) {
+  <div class="status-line copy-page-message" [class.error]="statusIsError" [class.success]="!statusIsError">
+    {{ statusMessage }}
+  </div>
+}
+
+<section class="card copy-settings-card">
+  <div class="trade-section-heading">
+    <div>
+      <h2>Copy configuration</h2>
+      <p class="muted">Credentials and access tokens are reused securely by the existing API.</p>
+    </div>
+  </div>
+
+  @if (loading && accounts.length === 0) {
+    <div class="empty-state">Loading saved accounts...</div>
+  } @else if (accounts.length < 2) {
+    <div class="empty-state">Save at least two Dhan accounts on the Login page to configure a master and child.</div>
+  } @else {
+    <div class="copy-settings-layout">
+      <div class="copy-master-panel">
+        <div class="field">
+          <label for="masterAccount">Master account</label>
+          <select id="masterAccount" [(ngModel)]="masterClientId" (ngModelChange)="onMasterChange()">
+            <option value="">Select master account</option>
+            @for (account of accounts; track account.dhanClientId) {
+              <option [value]="account.dhanClientId">{{ account.accountName }} ({{ account.dhanClientId }})</option>
+            }
+          </select>
+        </div>
+
+        @if (masterClientId) {
+          @for (account of accounts; track account.dhanClientId) {
+            @if (account.dhanClientId === masterClientId) {
+              <div class="copy-account-summary">
+                <div class="copy-account-avatar">M</div>
+                <div>
+                  <strong>{{ account.accountName }}</strong>
+                  <span>{{ account.dhanClientId }}</span>
+                </div>
+                <span class="trade-account-status" [class.connected]="account.isConnected">
+                  <span class="trade-status-dot"></span>
+                  {{ account.isConnected ? 'Ready' : 'Login required' }}
+                </span>
+              </div>
+            }
+          }
+        }
+      </div>
+
+      <div class="copy-child-panel">
+        <div class="copy-child-heading">
+          <div>
+            <h3>Child accounts</h3>
+            <p class="muted">Enable each account that should mirror the master.</p>
+          </div>
+          <span class="trade-selection-count">{{ enabledChildCount }} enabled</span>
+        </div>
+        @if (!masterClientId) {
+          <div class="empty-state">Select a master account to choose child accounts.</div>
+        } @else if (childRows.length === 0) {
+          <div class="empty-state">No other saved accounts are available.</div>
+        } @else {
+          <div class="trade-account-list">
+            @for (row of childRows; track row.account.dhanClientId) {
+              <label class="trade-account-option" [class.selected]="row.enabled">
+                <input type="checkbox" [(ngModel)]="row.enabled" (ngModelChange)="markSettingsDirty()" [disabled]="saving" />
+                <span class="trade-account-details">
+                  <span class="trade-account-name">{{ row.account.accountName }}</span>
+                  <span class="trade-account-id">{{ row.account.dhanClientId }}</span>
+                </span>
+                <span class="trade-account-status" [class.connected]="row.account.isConnected">
+                  <span class="trade-status-dot"></span>
+                  {{ row.account.isConnected ? 'Connected' : 'Token refresh on order' }}
+                </span>
+              </label>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <label class="copy-enable-toggle">
+      <input type="checkbox" [(ngModel)]="enabled" (ngModelChange)="markSettingsDirty()" [disabled]="saving" />
+      <span>
+        <strong>Enable automatic copying</strong>
+        <small>Enabled child accounts can receive live orders from this master.</small>
+      </span>
+    </label>
+
+    <div class="copy-save-row">
+      <span class="muted">{{ settingsDirty ? 'Unsaved configuration changes.' : 'Saving applies immediately while the API is running.' }}</span>
+      <button type="button" [disabled]="saving || accounts.length < 2" (click)="saveSettings()">
+        {{ saving ? 'Saving...' : 'Save configuration' }}
+      </button>
+    </div>
+  }
+</section>
+
+<section class="card copy-info-card">
+  <h2>How order detection works</h2>
+  <p>
+    Dhan's <a href="https://dhanhq.co/docs/v2/order-update/" target="_blank" rel="noopener noreferrer">Live Order Update WebSocket documentation</a>
+    says an individual account receives updates for orders placed through any platform. This includes orders placed in Dhan's app.
+    The API monitors the configured master and copies supported BUY/SELL order types to enabled children. Bracket/cover,
+    after-market, and disclosed-quantity orders are reported as unsupported rather than silently altered.
+  </p>
+  <p class="muted">
+    Copying only runs while this API is online and connected. Each observed master order is recorded once; child orders use a stable
+    correlation ID and the order status stream to suppress repeats. Dhan documents correlation IDs for tracking, not as an exactly-once
+    guarantee; a network failure at submission time can still be ambiguous. Copying does not guarantee matching execution
+    prices, fills, available funds, or that Dhan will accept every child order.
+  </p>
+  @if (listenerMessage) {
+    <div class="status-line" [class.error]="!listenerConnected">{{ listenerMessage }}</div>
+  }
+</section>
+
+<section class="card">
+  <div class="trade-section-heading">
+    <div>
+      <h2>Copy activity</h2>
+      <p class="muted">Master orders and per-child submission and broker status.</p>
+    </div>
+    <button type="button" class="secondary" [disabled]="loading" (click)="loadDashboard()">
+      {{ loading ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </div>
+
+  @if (orders.length === 0) {
+    <div class="empty-state">No master orders have been copied yet.</div>
+  } @else {
+    <div class="copy-activity-list">
+      @for (order of orders; track trackOrder($index, order)) {
+        <article class="copy-order-card">
+          <div class="copy-order-summary">
+            <div>
+              <h3>{{ order.tradingSymbol }}</h3>
+              <p class="muted">{{ order.masterAccountName }} · {{ order.masterClientId }} · Order {{ order.masterOrderId }}</p>
+            </div>
+            <span class="badge" [class.buy]="order.transactionType === 'BUY'" [class.sell]="order.transactionType === 'SELL'">
+              {{ order.transactionType }}
+            </span>
+          </div>
+          <div class="copy-order-meta">
+            <span>Master status <strong>{{ order.masterOrderStatus }}</strong></span>
+            <span>Quantity <strong>{{ order.quantity }}</strong></span>
+            <span>Order type <strong>{{ order.orderType }}</strong></span>
+            <span>Product <strong>{{ order.productType }}</strong></span>
+            <span>Exchange <strong>{{ order.exchangeSegment }}</strong></span>
+            <span>Price <strong>{{ order.orderType === 'MARKET' || order.orderType === 'STOP_LOSS_MARKET' ? '-' : (order.price | number:'1.2-2') }}</strong></span>
+            <span>Received <strong>{{ order.receivedAtUtc | date:'short' }}</strong></span>
+          </div>
+          @if (order.masterOrderErrorMessage) {
+            <div class="copy-master-error">{{ order.masterOrderErrorMessage }}</div>
+          }
+          @if (order.children.length > 0) {
+            <div class="copy-child-results">
+              @for (child of order.children; track child.dhanClientId) {
+                <div class="copy-child-result">
+                  <div class="copy-child-result-account">
+                    <strong>{{ child.accountName }}</strong>
+                    <span>{{ child.dhanClientId }}</span>
+                  </div>
+                  <span class="copy-result-badge" [class]="childStatusClass(child.copyState, child.orderStatus)">
+                    {{ child.orderStatus || child.copyState }}
+                  </span>
+                  @if (child.orderId) {
+                    <span class="copy-result-order-id">Order {{ child.orderId }}</span>
+                  }
+                  @if (child.errorMessage) {
+                    <span class="copy-result-error">{{ child.errorMessage }}</span>
+                  }
+                  @if (child.copyState === 'FAILED') {
+                    <button
+                      type="button"
+                      class="secondary copy-retry-button"
+                      [disabled]="saving"
+                      (click)="retryChildOrder(order, child.dhanClientId)"
+                    >Retry</button>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </article>
+      }
+    </div>
+  }
+</section>

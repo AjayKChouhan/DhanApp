@@ -629,3 +629,365 @@ table tbody tr:hover {
     width: 100%;
   }
 }
+
+.copy-page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  margin-bottom: 1.4rem;
+}
+
+.copy-page-heading h1 {
+  margin: 0.4rem 0;
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  letter-spacing: -0.03em;
+}
+
+.copy-page-heading p {
+  margin: 0;
+}
+
+.copy-listener-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.copy-listener-indicator.connected {
+  border-color: rgba(22, 163, 74, 0.25);
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--success);
+}
+
+.copy-listener-indicator .trade-status-dot {
+  background: var(--danger);
+}
+
+.copy-listener-indicator.connected .trade-status-dot {
+  background: var(--success);
+}
+
+.copy-page-message {
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.copy-settings-card,
+.copy-info-card {
+  padding: 1.4rem;
+}
+
+.copy-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 1.25rem;
+}
+
+.copy-master-panel,
+.copy-child-panel {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #fafbff;
+}
+
+.copy-account-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.copy-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.copy-account-summary > div:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.copy-account-summary strong,
+.copy-account-summary > div:nth-child(2) span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-account-summary strong {
+  font-size: 0.84rem;
+}
+
+.copy-account-summary > div:nth-child(2) span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.copy-child-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.8rem;
+}
+
+.copy-child-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.copy-child-heading p {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+}
+
+.copy-enable-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(79, 70, 229, 0.18);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  cursor: pointer;
+}
+
+.copy-enable-toggle input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.copy-enable-toggle span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.copy-enable-toggle strong {
+  font-size: 0.85rem;
+}
+
+.copy-enable-toggle small {
+  color: var(--muted);
+  font-size: 0.77rem;
+}
+
+.copy-save-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.copy-save-row .muted {
+  font-size: 0.78rem;
+}
+
+.copy-info-card h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.copy-info-card p {
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.copy-info-card a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.copy-activity-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.copy-order-card {
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+
+.copy-order-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: #fafbff;
+}
+
+.copy-order-summary h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.copy-order-summary p {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+}
+
+.copy-order-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--panel-border);
+  font-size: 0.77rem;
+  color: var(--muted);
+}
+
+.copy-order-meta strong {
+  color: var(--text);
+}
+
+.copy-master-error {
+  padding: 0.65rem 1rem;
+  border-top: 1px solid var(--panel-border);
+  color: var(--danger);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.copy-child-results {
+  display: grid;
+  border-top: 1px solid var(--panel-border);
+}
+
+.copy-child-result {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto minmax(120px, 1.5fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 0.77rem;
+}
+
+.copy-child-result:last-child {
+  border-bottom: 0;
+}
+
+.copy-child-result-account {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.copy-child-result-account strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.copy-child-result-account span,
+.copy-result-order-id {
+  color: var(--muted);
+}
+
+.copy-result-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.copy-result-badge.copy-status-submitted {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success);
+}
+
+.copy-result-badge.copy-status-pending {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--accent);
+}
+
+.copy-result-badge.copy-status-failed {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--danger);
+}
+
+.copy-result-badge.copy-status-skipped {
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.copy-result-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.copy-retry-button {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.74rem;
+}
+
+@media (max-width: 800px) {
+  .copy-settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .copy-page-heading,
+  .copy-save-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .copy-listener-indicator {
+    align-self: flex-start;
+  }
+
+  .copy-child-result {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .copy-result-order-id,
+  .copy-result-error {
+    grid-column: 1 / -1;
+  }
+
+  .copy-retry-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}

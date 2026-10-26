@@ -231,6 +231,7 @@ export class TradeComponent implements OnInit {
           accountClientIds,
           securityId: row.instrument.securityId,
           tradingSymbol: row.instrument.tradingSymbol,
+          exchangeSegment: row.instrument.exchangeSegment || 'NSE_FNO',
           lotSize: row.instrument.lotSize,
           lots: row.lots,
           transactionType: row.transactionType,

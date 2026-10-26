@@ -24,7 +24,14 @@ namespace DhanService.Services
     public class DhanOrderService : IDhanOrderService
     {
         private static readonly HashSet<string> ValidTransactionTypes = new(StringComparer.OrdinalIgnoreCase) { "BUY", "SELL" };
-        private static readonly HashSet<string> ValidOrderTypes = new(StringComparer.OrdinalIgnoreCase) { "MARKET", "LIMIT" };
+        private static readonly HashSet<string> ValidOrderTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "MARKET", "LIMIT", "STOP_LOSS", "STOP_LOSS_MARKET"
+        };
+        private static readonly HashSet<string> ValidProductTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "CNC", "INTRADAY", "MARGIN", "MTF", "CO", "BO"
+        };
 
         private readonly HttpClient _httpClient;
         private readonly IDhanAccountStore _accountStore;
@@ -57,17 +64,39 @@ namespace DhanService.Services
             var orderType = string.IsNullOrWhiteSpace(request.OrderType) ? "MARKET" : request.OrderType;
             if (!ValidOrderTypes.Contains(orderType))
             {
-                throw new ArgumentException("orderType must be MARKET or LIMIT.", nameof(request));
+                throw new ArgumentException("orderType must be MARKET, LIMIT, STOP_LOSS, or STOP_LOSS_MARKET.", nameof(request));
             }
 
-            if (string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase) && (request.Price is null || request.Price <= 0))
+            if ((string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(orderType, "STOP_LOSS", StringComparison.OrdinalIgnoreCase)) &&
+                (request.Price is null || request.Price <= 0))
             {
-                throw new ArgumentException("price must be greater than zero for LIMIT orders.", nameof(request));
+                throw new ArgumentException("price must be greater than zero for LIMIT and STOP_LOSS orders.", nameof(request));
+            }
+
+            if ((string.Equals(orderType, "STOP_LOSS", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(orderType, "STOP_LOSS_MARKET", StringComparison.OrdinalIgnoreCase)) &&
+                (request.TriggerPrice is null || request.TriggerPrice <= 0))
+            {
+                throw new ArgumentException("triggerPrice must be greater than zero for stop-loss orders.", nameof(request));
             }
 
             if (request.Lots <= 0 || request.LotSize <= 0)
             {
                 throw new ArgumentException("lots and lotSize must be greater than zero.", nameof(request));
+            }
+            if (!ValidProductTypes.Contains(request.ProductType))
+            {
+                throw new ArgumentException("productType is not supported.", nameof(request));
+            }
+            if (string.IsNullOrWhiteSpace(request.ExchangeSegment))
+            {
+                throw new ArgumentException("exchangeSegment is required.", nameof(request));
+            }
+            if (!string.Equals(request.Validity, "DAY", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(request.Validity, "IOC", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("validity must be DAY or IOC.", nameof(request));
             }
 
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
@@ -187,22 +216,41 @@ namespace DhanService.Services
                 }
 
                 var correlationId = SanitizeCorrelationId($"{request.TradingSymbol}-{transactionType}-{correlationSuffix}-{account.DhanClientId}");
+                if (!string.IsNullOrWhiteSpace(request.CorrelationId))
+                {
+                    correlationId = SanitizeCorrelationId(request.CorrelationId);
+                    var existingOrder = await GetOrderByCorrelationIdAsync(account, token.AccessToken, correlationId, cancellationToken);
+                    if (existingOrder is not null)
+                    {
+                        return new DhanOrderResultDto
+                        {
+                            AccountName = account.AccountName,
+                            DhanClientId = account.DhanClientId,
+                            Success = true,
+                            OrderId = existingOrder.OrderId,
+                            OrderStatus = existingOrder.OrderStatus
+                        };
+                    }
+                }
 
                 var isLimit = string.Equals(orderType, "LIMIT", StringComparison.OrdinalIgnoreCase);
+                var isStopLossMarket = string.Equals(orderType, "STOP_LOSS_MARKET", StringComparison.OrdinalIgnoreCase);
                 var orderPayload = new
                 {
                     dhanClientId = account.DhanClientId,
                     correlationId,
                     transactionType,
-                    exchangeSegment = "NSE_FNO",
-                    productType = "MARGIN",
+                    exchangeSegment = request.ExchangeSegment,
+                    productType = request.ProductType,
                     orderType,
-                    validity = "DAY",
+                    validity = request.Validity,
                     securityId = request.SecurityId,
                     quantity = quantity.ToString(),
                     disclosedQuantity = "",
-                    price = isLimit ? request.Price!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "0",
-                    triggerPrice = "",
+                    price = isLimit || string.Equals(orderType, "STOP_LOSS", StringComparison.OrdinalIgnoreCase)
+                        ? request.Price!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        : "0",
+                    triggerPrice = request.TriggerPrice?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "",
                     afterMarketOrder = false
                 };
 
@@ -249,6 +297,39 @@ namespace DhanService.Services
                     ErrorMessage = ex.Message
                 };
             }
+        }
+
+        private async Task<PlaceOrderResponse?> GetOrderByCorrelationIdAsync(
+            DhanAccountCredential account, string accessToken, string correlationId, CancellationToken cancellationToken)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{_options.ApiBaseUrl.TrimEnd('/')}/v2/orders/external/{Uri.EscapeDataString(correlationId)}");
+            request.Headers.Add("access-token", accessToken);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException(
+                    $"Could not verify copy-order correlation ID ({(int)response.StatusCode}): {body}",
+                    null,
+                    response.StatusCode);
+            }
+
+            var existingOrder = JsonSerializer.Deserialize<PlaceOrderResponse>(
+                body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (existingOrder is null || string.IsNullOrWhiteSpace(existingOrder.OrderId))
+            {
+                throw new InvalidDataException("Dhan returned an invalid response while checking the copy-order correlation ID.");
+            }
+            return existingOrder;
         }
 
         private static string SanitizeCorrelationId(string raw)
