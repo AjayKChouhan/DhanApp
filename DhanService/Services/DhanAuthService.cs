@@ -224,6 +224,21 @@ namespace DhanService.Services
                     };
                 }
 
+                if (DhanApiResponse.HasErrorStatus(body))
+                {
+                    _logger.LogWarning(
+                        "Dhan set-IP returned an error payload for client {ClientId}: {Body}",
+                        account.DhanClientId,
+                        body);
+                    return new DhanSetIpResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Success = false,
+                        ErrorMessage = $"Dhan setIP returned an error: {body}"
+                    };
+                }
+
                 return new DhanSetIpResultDto
                 {
                     AccountName = account.AccountName,
@@ -301,17 +316,8 @@ private async Task<DhanIpStatusResultDto> GetStaticIpStatusForAccountAsync(
             };
         }
 
-        using var document = System.Text.Json.JsonDocument.Parse(body);
-        var root = document.RootElement;
-
         // Dhan can return HTTP 200 with an error in the JSON body.
-        if (root.ValueKind == System.Text.Json.JsonValueKind.Array ||
-            (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
-             root.TryGetProperty("status", out var status) &&
-             string.Equals(
-                 status.GetString(),
-                 "ERROR",
-                 StringComparison.OrdinalIgnoreCase)))
+        if (DhanApiResponse.HasErrorStatus(body))
         {
             _logger.LogWarning(
                 "Dhan getIP returned an error payload for client {ClientId}: {Body}",
@@ -374,69 +380,6 @@ private async Task<DhanIpStatusResultDto> GetStaticIpStatusForAccountAsync(
         };
     }
 }
-
-
-        private async Task<DhanIpStatusResultDto> GetStaticIpStatusForAccountAsync1(DhanAccountCredential account, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var token = await EnsureValidTokenAsync(account, cancellationToken);
-                if (token is null)
-                {
-                    return new DhanIpStatusResultDto
-                    {
-                        AccountName = account.AccountName,
-                        DhanClientId = account.DhanClientId,
-                        Success = false,
-                        ErrorMessage = "Could not obtain a valid access token (login failed)."
-                    };
-                }
-
-                using var httpRequest = new HttpRequestMessage(HttpMethod.Get, $"{_options.ApiBaseUrl.TrimEnd('/')}/v2/ip/getIP");
-                httpRequest.Headers.Add("access-token", token.AccessToken);
-
-                using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Dhan get-IP failed for {Account} ({ClientId}): {Status} {Body}",
-                        account.AccountName, account.DhanClientId, response.StatusCode, body);
-                    return new DhanIpStatusResultDto
-                    {
-                        AccountName = account.AccountName,
-                        DhanClientId = account.DhanClientId,
-                        Success = false,
-                        ErrorMessage = $"{(int)response.StatusCode}: {body}"
-                    };
-                }
-
-                var parsed = System.Text.Json.JsonSerializer.Deserialize<GetIpResponse>(body,
-                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                return new DhanIpStatusResultDto
-                {
-                    AccountName = account.AccountName,
-                    DhanClientId = account.DhanClientId,
-                    Success = true,
-                    PrimaryIp = parsed?.PrimaryIP,
-                    SecondaryIp = parsed?.SecondaryIP,
-                    ModifyDatePrimary = parsed?.ModifyDatePrimary,
-                    ModifyDateSecondary = parsed?.ModifyDateSecondary
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error fetching Dhan static IP status for {Account} ({ClientId})", account.AccountName, account.DhanClientId);
-                return new DhanIpStatusResultDto
-                {
-                    AccountName = account.AccountName,
-                    DhanClientId = account.DhanClientId,
-                    Success = false,
-                    ErrorMessage = ex.Message
-                };
-            }
-        }
 
         private class GetIpResponse
         {

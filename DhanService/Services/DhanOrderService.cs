@@ -411,8 +411,34 @@ namespace DhanService.Services
                     };
                 }
 
+                if (DhanApiResponse.HasErrorStatus(body))
+                {
+                    _logger.LogWarning(
+                        "Dhan order returned an error payload for {Account} ({ClientId}): {Body}",
+                        account.AccountName,
+                        account.DhanClientId,
+                        body);
+                    return new DhanOrderResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Success = false,
+                        ErrorMessage = $"Dhan returned an order error: {body}"
+                    };
+                }
+
                 var parsed = JsonSerializer.Deserialize<PlaceOrderResponse>(body,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (string.IsNullOrWhiteSpace(parsed?.OrderId))
+                {
+                    return new DhanOrderResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Success = false,
+                        ErrorMessage = $"Dhan returned an invalid order response: {body}"
+                    };
+                }
 
                 return new DhanOrderResultDto
                 {
