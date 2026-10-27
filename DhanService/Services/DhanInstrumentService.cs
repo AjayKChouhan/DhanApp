@@ -43,6 +43,7 @@ namespace DhanService.Services
         private static readonly string[] SegmentHeaders = { "SEM_SEGMENT", "SEGMENT" };
         private static readonly string[] SecurityIdHeaders = { "SEM_SMST_SECURITY_ID", "SECURITY_ID" };
         private static readonly string[] InstrumentTypeHeaders = { "SEM_EXCH_INSTRUMENT_TYPE", "INSTRUMENT_TYPE" };
+        private static readonly string[] InstrumentNameHeaders = { "SEM_INSTRUMENT_NAME", "INSTRUMENT" };
         private static readonly string[] TradingSymbolHeaders = { "SEM_TRADING_SYMBOL", "TRADING_SYMBOL" };
         private static readonly string[] DisplayNameHeaders = { "SEM_CUSTOM_SYMBOL", "DISPLAY_NAME" };
         private static readonly string[] SymbolNameHeaders = { "SM_SYMBOL_NAME", "SYMBOL_NAME" };
@@ -113,6 +114,7 @@ namespace DhanService.Services
             var segmentIdx = ResolveIndex(SegmentHeaders);
             var securityIdIdx = ResolveIndex(SecurityIdHeaders);
             var instrumentTypeIdx = ResolveIndex(InstrumentTypeHeaders);
+            var instrumentNameIdx = ResolveIndex(InstrumentNameHeaders);
             var tradingSymbolIdx = ResolveIndex(TradingSymbolHeaders);
             var displayNameIdx = ResolveIndex(DisplayNameHeaders);
             var symbolNameIdx = ResolveIndex(SymbolNameHeaders);
@@ -144,6 +146,9 @@ namespace DhanService.Services
                     var exchId = fields[exchIdIdx].Trim();
                     var rowSegment = fields[segmentIdx].Trim();
                     var instrumentType = fields[instrumentTypeIdx].Trim();
+                    var instrumentName = instrumentNameIdx >= 0 && fields.Length > instrumentNameIdx
+                        ? fields[instrumentNameIdx].Trim()
+                        : instrumentType;
 
                     if (!string.Equals(exchId, exchange, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!string.Equals(rowSegment, segment, StringComparison.OrdinalIgnoreCase)) continue;
@@ -163,13 +168,20 @@ namespace DhanService.Services
                     DateTime.TryParse(expiryRaw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var expiryDate);
 
                     var symbolName = symbolNameIdx >= 0 && fields.Length > symbolNameIdx ? fields[symbolNameIdx].Trim() : string.Empty;
+                    var tradingSymbol = tradingSymbolIdx >= 0 && fields.Length > tradingSymbolIdx
+                        ? fields[tradingSymbolIdx].Trim()
+                        : string.Empty;
+                    var displayName = displayNameIdx >= 0 && fields.Length > displayNameIdx
+                        ? fields[displayNameIdx].Trim()
+                        : symbolName;
 
                     result.Add(new FuturesInstrument
                     {
                         SecurityId = fields[securityIdIdx].Trim(),
-                        TradingSymbol = tradingSymbolIdx >= 0 && fields.Length > tradingSymbolIdx ? fields[tradingSymbolIdx].Trim() : string.Empty,
-                        DisplayName = displayNameIdx >= 0 && fields.Length > displayNameIdx ? fields[displayNameIdx].Trim() : symbolName,
-                        UnderlyingSymbol = symbolName,
+                        TradingSymbol = tradingSymbol,
+                        DisplayName = displayName,
+                        UnderlyingSymbol = ResolveUnderlyingSymbol(symbolName, tradingSymbol),
+                        InstrumentType = instrumentName,
                         LotSize = lotSize,
                         ExpiryDate = expiryDate == default ? null : expiryDate,
                         ExchangeSegment = exchangeSegmentLabel
@@ -186,6 +198,17 @@ namespace DhanService.Services
                 .OrderBy(i => i.UnderlyingSymbol)
                 .ThenBy(i => i.ExpiryDate)
                 .ToList();
+        }
+
+        private static string ResolveUnderlyingSymbol(string symbolName, string tradingSymbol)
+        {
+            if (!string.IsNullOrWhiteSpace(symbolName))
+            {
+                return symbolName;
+            }
+
+            var expirySeparator = tradingSymbol.IndexOf('-', StringComparison.Ordinal);
+            return expirySeparator > 0 ? tradingSymbol[..expirySeparator].Trim() : string.Empty;
         }
 
         /// <summary>Minimal CSV line splitter that understands double-quoted fields.</summary>

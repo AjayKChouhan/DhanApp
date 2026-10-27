@@ -25,6 +25,7 @@ namespace DhanAPI.Controllers
         private readonly IDhanOrderService _orderService;
         private readonly IDhanPositionService _positionService;
         private readonly IDhanMarketQuoteService _marketQuoteService;
+        private readonly IDhanMarketScannerService _marketScannerService;
         private readonly ICopyTradingStore _copyTradingStore;
 
         public DhanTradingController(
@@ -36,6 +37,7 @@ namespace DhanAPI.Controllers
             IDhanOrderService orderService,
             IDhanPositionService positionService,
             IDhanMarketQuoteService marketQuoteService,
+            IDhanMarketScannerService marketScannerService,
             ICopyTradingStore copyTradingStore)
         {
             _logger = logger;
@@ -46,6 +48,7 @@ namespace DhanAPI.Controllers
             _orderService = orderService;
             _positionService = positionService;
             _marketQuoteService = marketQuoteService;
+            _marketScannerService = marketScannerService;
             _copyTradingStore = copyTradingStore;
         }
 
@@ -232,6 +235,29 @@ namespace DhanAPI.Controllers
 
             var result = await _marketQuoteService.GetLtpAsync(securityId.Trim(), exchangeSegment, cancellationToken);
             return Ok(result);
+        }
+
+        /// <summary>Scans current-expiry NSE stock futures using Dhan intraday candles. This endpoint only reads market data and never places orders.</summary>
+        [HttpGet("scanner/stock-futures")]
+        [ProducesResponseType(typeof(MarketScannerResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+        public async Task<ActionResult<MarketScannerResponse>> ScanStockFutures(CancellationToken cancellationToken)
+        {
+            try
+            {
+                return Ok(await _marketScannerService.ScanStockFuturesAsync(cancellationToken));
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Dhan market scan could not be completed");
+                return Problem(title: "Market scan unavailable", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Dhan market-data request failed");
+                return Problem(title: "Market data unavailable", detail: "The market-data provider could not complete the scan. Try again later.", statusCode: StatusCodes.Status502BadGateway);
+            }
         }
 
         /// <summary>Places the same BUY/SELL futures order (same lots) across selected saved accounts.</summary>

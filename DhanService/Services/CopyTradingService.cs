@@ -19,7 +19,7 @@ namespace DhanService.Services
     {
         private static readonly HashSet<string> CopyableMasterStatuses = new(StringComparer.OrdinalIgnoreCase)
         {
-            "PENDING", "TRADED", "PART_TRADED"
+            "TRANSIT", "PENDING", "TRADED", "PART_TRADED"
         };
         private static readonly HashSet<string> TerminalMasterStatuses = new(StringComparer.OrdinalIgnoreCase)
         {

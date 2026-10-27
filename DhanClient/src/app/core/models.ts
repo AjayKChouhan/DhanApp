@@ -33,6 +33,7 @@ export interface FuturesInstrument {
   tradingSymbol: string;
   underlyingSymbol?: string;
   displayName?: string;
+  instrumentType?: string;
   lotSize: number;
   expiryDate?: string | null;
   exchangeSegment?: string;
@@ -159,6 +160,66 @@ export interface DhanLtpResult {
   success: boolean;
   lastPrice?: number | null;
   errorMessage?: string | null;
+}
+
+export interface MarketScannerInstrument {
+  securityId: string;
+  tradingSymbol: string;
+  underlyingSymbol: string;
+  lastUpdated: string;
+  lastPrice: number;
+  vwap: number;
+  ema20: number;
+  ema50: number;
+  rsi14: number;
+  macdHistogram: number;
+  atr14: number;
+  sessionVolume: number;
+  averageVolume: number;
+  previousHigh: number;
+  previousLow: number;
+  historySessions: number;
+  relativeStrengthPercent: number | null;
+  averageDailyTurnover: number;
+  longRiskReward: number;
+  shortRiskReward: number;
+  isLiquid: boolean;
+  longMarketTrend: boolean;
+  shortMarketTrend: boolean;
+  longRelativeStrength: boolean;
+  shortRelativeStrength: boolean;
+  longEmaAlignment: boolean;
+  shortEmaAlignment: boolean;
+  longAboveVwap: boolean;
+  shortBelowVwap: boolean;
+  longAboveEma20: boolean;
+  shortBelowEma20: boolean;
+  longAboveEma50: boolean;
+  shortBelowEma50: boolean;
+  longRsiConfirmation: boolean;
+  shortRsiConfirmation: boolean;
+  volumeConfirmation: boolean;
+  longBreakout: boolean;
+  shortBreakdown: boolean;
+  longPullbackConfirmation: boolean;
+  shortPullbackConfirmation: boolean;
+  longEntryTrigger: number;
+  shortEntryTrigger: number;
+  longStopLoss: number;
+  shortStopLoss: number;
+  longTarget: number;
+  shortTarget: number;
+  longMacdConfirmation: boolean;
+  shortMacdConfirmation: boolean;
+}
+
+export interface MarketScannerResponse {
+  generatedAt: string;
+  instrumentCount: number;
+  scannedCount: number;
+  failedCount: number;
+  warning?: string | null;
+  instruments: MarketScannerInstrument[];
 }
 
 export interface DhanSetIpResult {

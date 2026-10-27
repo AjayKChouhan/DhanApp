@@ -7,6 +7,7 @@ namespace DhanService.Models
         public string TradingSymbol { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public string UnderlyingSymbol { get; set; } = string.Empty;
+        public string InstrumentType { get; set; } = string.Empty;
         public int LotSize { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public string ExchangeSegment { get; set; } = "NSE_FNO";

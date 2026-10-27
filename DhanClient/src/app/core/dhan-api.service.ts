@@ -12,6 +12,7 @@ import {
   CopyTradingDashboard,
   CopyTradingSettings,
   FuturesInstrument,
+  MarketScannerResponse,
   OrderResult,
   PlaceOrderRequest
 } from './models';
@@ -34,7 +35,9 @@ export class DhanApiService {
 
   private toErrorMessage(err: HttpErrorResponse): Error {
     const body = err.error;
-    const message = (body && body.title) || (typeof body === 'string' ? body : null) || `Request failed (${err.status})`;
+    const message = (body && (body.detail || body.title)) ||
+      (typeof body === 'string' ? body : null) ||
+      `Request failed (${err.status})`;
     return new Error(message);
   }
 
@@ -97,6 +100,10 @@ export class DhanApiService {
 
   getLtp(securityId: string, exchangeSegment: string): Promise<DhanLtpResult> {
     return this.get<DhanLtpResult>(`/instruments/${encodeURIComponent(securityId)}/ltp?exchangeSegment=${encodeURIComponent(exchangeSegment)}`);
+  }
+
+  getStockFuturesScan(): Promise<MarketScannerResponse> {
+    return this.get<MarketScannerResponse>('/scanner/stock-futures');
   }
 
   placeOrder(order: PlaceOrderRequest): Promise<OrderResult[]> {

@@ -20,6 +20,7 @@ builder.Services.AddHttpClient<IDhanInstrumentService, DhanInstrumentService>();
 builder.Services.AddHttpClient<IDhanOrderService, DhanOrderService>();
 builder.Services.AddHttpClient<IDhanPositionService, DhanPositionService>();
 builder.Services.AddHttpClient<IDhanMarketQuoteService, DhanMarketQuoteService>();
+builder.Services.AddHttpClient<IDhanMarketScannerService, DhanMarketScannerService>();
 builder.Services.AddSingleton<ICopyTradingStore, CopyTradingStore>();
 builder.Services.AddSingleton<CopyTradingRuntimeStatus>();
 builder.Services.AddSingleton<ICopyTradingService, CopyTradingService>();

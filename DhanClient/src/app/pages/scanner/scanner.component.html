@@ -1,0 +1,142 @@
+<section class="scanner-page">
+  <header class="scanner-header">
+    <div class="trade-page-title">
+      <span class="trade-eyebrow">MARKET ANALYSIS</span>
+      <h1>Futures Scanner</h1>
+      <p class="muted">Rank current-expiry NSE stock futures using live Dhan candles and technical signals. Analysis only; no orders are placed.</p>
+      @if (generatedAt) {
+        <span class="scanner-updated">Updated {{ generatedAt | date:'medium' }}</span>
+      }
+    </div>
+    <button type="button" [disabled]="loading" (click)="refresh()">
+      {{ loading ? 'Scanning...' : 'Refresh scan' }}
+    </button>
+  </header>
+
+  @if (errorMessage) {
+    <div class="status-line error scanner-message">{{ errorMessage }}</div>
+  } @else if (warning) {
+    <div class="status-line scanner-warning">{{ warning }}</div>
+  }
+
+  @if (loading && instruments.length === 0) {
+    <section class="card scanner-loading">Loading current-expiry stock futures and calculating indicators...</section>
+  } @else if (!errorMessage && instruments.length === 0) {
+    <section class="card scanner-empty">No stock-futures market data is available. Confirm a Dhan account is configured, logged in, and subscribed to market data, then refresh.</section>
+  } @else {
+    <section class="scanner-section" aria-labelledby="longScannerHeading">
+      <div class="scanner-section-heading">
+        <div>
+          <span class="scanner-side-label long-label">LONG SCANNER</span>
+          <h2 id="longScannerHeading">Bullish opportunities</h2>
+          <p class="muted">Enabled conditions filter candidates; score uses the selected weights.</p>
+        </div>
+      </div>
+      <div class="scanner-layout">
+        <aside class="card scanner-filters" aria-label="LONG scanner filters">
+          <h3>LONG filters</h3>
+          @for (filter of longFilters; track filter.key) {
+            <label class="scanner-filter">
+              <input type="checkbox" [(ngModel)]="filter.enabled" />
+              <span><strong>{{ filter.label }}</strong><small>{{ filter.description }}</small></span>
+            </label>
+          }
+        </aside>
+        <div class="card scanner-results">
+          @if (longRows.length === 0) {
+            <div class="scanner-empty">
+              @if (hasScoringFilters(longFilters)) {
+                No LONG futures pass the mandatory liquidity and 1:2 risk/reward checks plus the selected filters.
+              } @else {
+                Select at least one weighted LONG filter to rank eligible futures.
+              }
+            </div>
+          } @else {
+            <div class="scanner-table-wrap">
+              <table class="scanner-table">
+                <thead><tr>
+                  <th>Stock future</th><th>Price</th><th>Relative strength</th><th>Weighted score</th><th>Signal</th><th>Entry trigger</th><th>Stop-loss</th><th>Target</th><th>R:R</th><th>RSI</th><th>Reasons</th>
+                </tr></thead>
+                <tbody>
+                  @for (row of longRows; track trackInstrument($index, row)) {
+                    <tr>
+                      <td><strong>{{ row.instrument.underlyingSymbol }}</strong><small>{{ row.instrument.tradingSymbol }}</small></td>
+                      <td>{{ row.instrument.lastPrice | number:'1.2-2' }}</td>
+                      <td>{{ row.instrument.relativeStrengthPercent !== null ? (row.instrument.relativeStrengthPercent | number:'1.2-2') + '%' : 'N/A' }}</td>
+                      <td><span class="scanner-score">{{ row.score | number:'1.0-0' }}/100</span></td>
+                      <td><span class="badge buy">LONG</span></td>
+                      <td>{{ row.entry | number:'1.2-2' }}</td>
+                      <td>{{ row.stopLoss | number:'1.2-2' }}</td>
+                      <td>{{ row.target | number:'1.2-2' }}</td>
+                      <td>1:{{ row.riskReward | number:'1.1-1' }}</td>
+                      <td>{{ row.instrument.rsi14 | number:'1.0-1' }}</td>
+                      <td><ul class="scanner-reasons">@for (reason of row.reasons; track reason) { <li>{{ reason }}</li> }</ul></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="scanner-section" aria-labelledby="shortScannerHeading">
+      <div class="scanner-section-heading">
+        <div>
+          <span class="scanner-side-label short-label">SHORT SCANNER</span>
+          <h2 id="shortScannerHeading">Bearish opportunities</h2>
+          <p class="muted">SHORT filters are independent from LONG filters; score uses enabled weights.</p>
+        </div>
+      </div>
+      <div class="scanner-layout">
+        <aside class="card scanner-filters" aria-label="SHORT scanner filters">
+          <h3>SHORT filters</h3>
+          @for (filter of shortFilters; track filter.key) {
+            <label class="scanner-filter">
+              <input type="checkbox" [(ngModel)]="filter.enabled" />
+              <span><strong>{{ filter.label }}</strong><small>{{ filter.description }}</small></span>
+            </label>
+          }
+        </aside>
+        <div class="card scanner-results">
+          @if (shortRows.length === 0) {
+            <div class="scanner-empty">
+              @if (hasScoringFilters(shortFilters)) {
+                No SHORT futures pass the mandatory liquidity and 1:2 risk/reward checks plus the selected filters.
+              } @else {
+                Select at least one weighted SHORT filter to rank eligible futures.
+              }
+            </div>
+          } @else {
+            <div class="scanner-table-wrap">
+              <table class="scanner-table">
+                <thead><tr>
+                  <th>Stock future</th><th>Price</th><th>Relative strength</th><th>Weighted score</th><th>Signal</th><th>Entry trigger</th><th>Stop-loss</th><th>Target</th><th>R:R</th><th>RSI</th><th>Reasons</th>
+                </tr></thead>
+                <tbody>
+                  @for (row of shortRows; track trackInstrument($index, row)) {
+                    <tr>
+                      <td><strong>{{ row.instrument.underlyingSymbol }}</strong><small>{{ row.instrument.tradingSymbol }}</small></td>
+                      <td>{{ row.instrument.lastPrice | number:'1.2-2' }}</td>
+                      <td>{{ row.instrument.relativeStrengthPercent !== null ? (row.instrument.relativeStrengthPercent | number:'1.2-2') + '%' : 'N/A' }}</td>
+                      <td><span class="scanner-score">{{ row.score | number:'1.0-0' }}/100</span></td>
+                      <td><span class="badge sell">SHORT</span></td>
+                      <td>{{ row.entry | number:'1.2-2' }}</td>
+                      <td>{{ row.stopLoss | number:'1.2-2' }}</td>
+                      <td>{{ row.target | number:'1.2-2' }}</td>
+                      <td>1:{{ row.riskReward | number:'1.1-1' }}</td>
+                      <td>{{ row.instrument.rsi14 | number:'1.0-1' }}</td>
+                      <td><ul class="scanner-reasons">@for (reason of row.reasons; track reason) { <li>{{ reason }}</li> }</ul></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+    <p class="scanner-disclaimer">Score is a weighted technical-confluence ranking, not a probability of profit. Categories use 25% trend/relative strength (15% NIFTY trend, 10% relative performance), 25% VWAP/EMA, 20% volume, 20% entry setup and 10% risk/reward; enabled score weights are normalized to 100. Liquidity (at least ₹5 Cr average daily turnover) and valid 1:2 risk/reward are mandatory. RSI is a soft tie-breaker only. Levels use 5-minute Dhan candles and ATR(14) and are analysis only.</p>
+  }
+</section>

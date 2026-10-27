@@ -1,0 +1,6 @@
+@baseUrl = http://localhost:5050/api/dhantrading
+@dhanApiKey =
+
+### Scan current-expiry NSE stock futures (read-only; requires a saved, logged-in Dhan account)
+GET {{baseUrl}}/scanner/stock-futures
+X-Dhan-Api-Key: {{dhanApiKey}}
