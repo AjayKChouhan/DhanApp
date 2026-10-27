@@ -66,13 +66,36 @@ namespace DhanAPI.Controllers
                 return BadRequest($"A maximum of {MaxAccounts} accounts is supported.");
             }
 
+            var accountIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var account in request.Accounts)
             {
-                if (string.IsNullOrWhiteSpace(account.DhanClientId) ||
-                    string.IsNullOrWhiteSpace(account.Pin) ||
-                    string.IsNullOrWhiteSpace(account.TotpSecret))
+                if (!string.IsNullOrWhiteSpace(account.Broker) &&
+                    !string.Equals(account.Broker, "DHAN", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(account.Broker, "ANGEL", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest("dhanClientId, pin, and totpSecret are required for every account.");
+                    return BadRequest("broker must be DHAN or ANGELONE.");
+                }
+                var isAngelOne = string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(account.Broker, "ANGEL", StringComparison.OrdinalIgnoreCase);
+                var hasCredentials = isAngelOne
+                    ? !string.IsNullOrWhiteSpace(account.ClientCode) &&
+                      !string.IsNullOrWhiteSpace(account.Password) &&
+                      !string.IsNullOrWhiteSpace(account.ApiKey) &&
+                      !string.IsNullOrWhiteSpace(account.TotpSecret)
+                    : !string.IsNullOrWhiteSpace(account.DhanClientId) &&
+                      !string.IsNullOrWhiteSpace(account.Pin) &&
+                      !string.IsNullOrWhiteSpace(account.TotpSecret);
+                if (!hasCredentials)
+                {
+                    return BadRequest(isAngelOne
+                        ? "clientCode, password, apiKey, and totpSecret are required for every Angel One account."
+                        : "dhanClientId, pin, and totpSecret are required for every Dhan account.");
+                }
+                var accountId = isAngelOne ? account.ClientCode.Trim() : account.DhanClientId.Trim();
+                if (!accountIds.Add(accountId))
+                {
+                    return BadRequest("Each broker account ID can only be configured once.");
                 }
             }
 
@@ -89,6 +112,7 @@ namespace DhanAPI.Controllers
             var result = accounts.Select(a => new
             {
                 a.AccountName,
+                a.Broker,
                 a.DhanClientId
             }).ToList();
             return Ok(result);
@@ -100,14 +124,15 @@ namespace DhanAPI.Controllers
         {
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
             var tokens = await _tokenStore.GetAllAsync(cancellationToken);
-            var tokenByClientId = tokens.ToDictionary(t => t.DhanClientId);
+            var tokenByClientId = tokens.ToDictionary(t => $"{t.Broker}:{t.DhanClientId}", StringComparer.OrdinalIgnoreCase);
 
             var result = accounts.Select(a =>
             {
-                tokenByClientId.TryGetValue(a.DhanClientId, out var token);
+                tokenByClientId.TryGetValue($"{a.Broker}:{a.DhanClientId}", out var token);
                 return new DhanAccountStatusDto
                 {
                     AccountName = a.AccountName,
+                    Broker = a.Broker,
                     DhanClientId = a.DhanClientId,
                     IsConnected = token is not null && !token.IsExpired,
                     TokenExpiryUtc = token?.ExpiryTimeUtc

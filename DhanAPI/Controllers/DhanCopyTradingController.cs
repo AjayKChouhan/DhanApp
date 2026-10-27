@@ -35,13 +35,15 @@ namespace DhanAPI.Controllers
         {
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
             var tokens = await _tokenStore.GetAllAsync(cancellationToken);
-            var tokenByClientId = tokens.ToDictionary(token => token.DhanClientId, StringComparer.OrdinalIgnoreCase);
+            var tokenByClientId = tokens.ToDictionary(
+                token => $"{token.Broker}:{token.DhanClientId}", StringComparer.OrdinalIgnoreCase);
             var accountStatuses = accounts.Select(account =>
             {
-                tokenByClientId.TryGetValue(account.DhanClientId, out var token);
+                tokenByClientId.TryGetValue($"{account.Broker}:{account.DhanClientId}", out var token);
                 return new DhanAccountStatusDto
                 {
                     AccountName = account.AccountName,
+                    Broker = account.Broker,
                     DhanClientId = account.DhanClientId,
                     IsConnected = token is not null && !token.IsExpired,
                     TokenExpiryUtc = token?.ExpiryTimeUtc
@@ -74,7 +76,7 @@ namespace DhanAPI.Controllers
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
             if (accounts.Count < 2)
             {
-                return BadRequest("Save at least two Dhan accounts before configuring copy trading.");
+                return BadRequest("Save a Dhan master account and at least one child account before configuring copy trading.");
             }
 
             settings.Children ??= new List<CopyTradingChildSetting>();
@@ -95,6 +97,10 @@ namespace DhanAPI.Controllers
                 {
                     return BadRequest("The selected master account is not saved.");
                 }
+                if (!string.Equals(master.Broker, "DHAN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest("For this setup, the master must be a Dhan account.");
+                }
                 settings.MasterClientId = master.DhanClientId;
             }
             else if (settings.Enabled)
@@ -108,7 +114,7 @@ namespace DhanAPI.Controllers
                 var childId = child.DhanClientId?.Trim();
                 if (string.IsNullOrWhiteSpace(childId) || !accountById.TryGetValue(childId, out var savedChild))
                 {
-                    return BadRequest("Every child account must be a saved Dhan account.");
+                    return BadRequest("Every child account must be a saved broker account.");
                 }
                 if (!childIds.Add(childId))
                 {

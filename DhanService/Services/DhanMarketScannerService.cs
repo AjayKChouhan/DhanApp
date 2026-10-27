@@ -71,7 +71,9 @@ namespace DhanService.Services
                 return new MarketScannerResponse(indiaNow, 0, 0, 0, noStockFuturesWarning, Array.Empty<MarketScannerInstrument>());
             }
 
-            var accounts = await _accountStore.GetAllAsync(cancellationToken);
+            var accounts = (await _accountStore.GetAllAsync(cancellationToken))
+                .Where(account => string.Equals(account.Broker, "DHAN", StringComparison.OrdinalIgnoreCase))
+                .ToList();
             if (accounts.Count == 0)
             {
                 throw new InvalidOperationException("No saved Dhan accounts are available for market data.");

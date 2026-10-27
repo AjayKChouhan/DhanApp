@@ -6,8 +6,12 @@ import { DhanAccountInput, DhanAccountStatus, DhanLoginResult } from '../../core
 
 interface AccountRow {
   accountName: string;
+  broker: 'DHAN' | 'ANGELONE';
   dhanClientId: string;
+  clientCode: string;
   pin: string;
+  password: string;
+  apiKey: string;
   totpSecret: string;
 }
 
@@ -38,7 +42,16 @@ export class LoginComponent implements OnInit {
   }
 
   addRow(): void {
-    this.accounts.push({ accountName: '', dhanClientId: '', pin: '', totpSecret: '' });
+    this.accounts.push({
+      accountName: '',
+      broker: 'DHAN',
+      dhanClientId: '',
+      clientCode: '',
+      pin: '',
+      password: '',
+      apiKey: '',
+      totpSecret: ''
+    });
   }
 
   removeRow(index: number): void {
@@ -51,8 +64,12 @@ export class LoginComponent implements OnInit {
       if (Array.isArray(existing) && existing.length > 0) {
         this.accounts = existing.map((a) => ({
           accountName: a.accountName,
+          broker: a.broker?.toUpperCase() === 'ANGELONE' ? 'ANGELONE' : 'DHAN',
           dhanClientId: a.dhanClientId,
+          clientCode: a.broker?.toUpperCase() === 'ANGELONE' ? a.dhanClientId : '',
           pin: '',
+          password: '',
+          apiKey: '',
           totpSecret: ''
         }));
         return;
@@ -67,14 +84,18 @@ export class LoginComponent implements OnInit {
     const payload: DhanAccountInput[] = this.accounts
       .map((a) => ({
         accountName: a.accountName.trim(),
-        dhanClientId: a.dhanClientId.trim(),
+        broker: a.broker,
+        dhanClientId: a.broker === 'DHAN' ? a.dhanClientId.trim() : '',
+        clientCode: a.broker === 'ANGELONE' ? a.clientCode.trim() : '',
         pin: a.pin.trim(),
+        password: a.password.trim(),
+        apiKey: a.apiKey.trim(),
         totpSecret: a.totpSecret.trim()
       }))
-      .filter((a) => a.dhanClientId);
+      .filter((a) => a.broker === 'DHAN' ? !!a.dhanClientId : !!a.clientCode);
 
     if (payload.length === 0) {
-      this.saveStatusMessage = 'Add at least one account with a Dhan Client ID.';
+      this.saveStatusMessage = 'Add at least one Dhan or Angel One account.';
       this.saveStatusIsError = true;
       return;
     }

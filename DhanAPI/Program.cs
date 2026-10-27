@@ -17,6 +17,7 @@ builder.Services.AddSingleton<IDhanAccountStore, DhanAccountStore>();
 builder.Services.AddSingleton<IDhanTokenStore, DhanTokenStore>();
 builder.Services.AddHttpClient<IDhanAuthService, DhanAuthService>();
 builder.Services.AddHttpClient<IDhanInstrumentService, DhanInstrumentService>();
+builder.Services.AddHttpClient<IAngelOneInstrumentService, AngelOneInstrumentService>();
 builder.Services.AddHttpClient<IDhanOrderService, DhanOrderService>();
 builder.Services.AddHttpClient<IDhanPositionService, DhanPositionService>();
 builder.Services.AddHttpClient<IDhanMarketQuoteService, DhanMarketQuoteService>();

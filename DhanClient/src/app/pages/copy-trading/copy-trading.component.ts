@@ -35,6 +35,18 @@ export class CopyTradingComponent implements OnInit, OnDestroy {
     return this.childRows.filter((row) => row.enabled).length;
   }
 
+  get masterAccounts(): DhanAccountStatus[] {
+    return this.accounts.filter((account) => account.broker?.toUpperCase() === 'DHAN');
+  }
+
+  get childAccounts(): DhanAccountStatus[] {
+    return this.accounts.filter((account) => account.dhanClientId !== this.masterClientId);
+  }
+
+  get canConfigure(): boolean {
+    return this.masterAccounts.length > 0 && this.accounts.length > 1;
+  }
+
   ngOnInit(): void {
     void this.loadDashboard();
     this.refreshTimer = setInterval(() => void this.loadDashboard(), 5000);
@@ -67,8 +79,7 @@ export class CopyTradingComponent implements OnInit, OnDestroy {
 
   onMasterChange(): void {
     this.settingsDirty = true;
-    this.childRows = this.accounts
-      .filter((account) => account.dhanClientId !== this.masterClientId)
+    this.childRows = this.childAccounts
       .map((account) => ({
         account,
         enabled: this.childRows.find((row) => row.account.dhanClientId === account.dhanClientId)?.enabled ?? false
@@ -153,8 +164,7 @@ export class CopyTradingComponent implements OnInit, OnDestroy {
     if (!this.settingsDirty) {
       this.masterClientId = dashboard.settings?.masterClientId || '';
       this.enabled = dashboard.settings?.enabled || false;
-      this.childRows = this.accounts
-        .filter((account) => account.dhanClientId !== this.masterClientId)
+      this.childRows = this.childAccounts
         .map((account) => ({
           account,
           enabled: dashboard.settings?.children?.find((child) => child.dhanClientId === account.dhanClientId)?.enabled

@@ -2,7 +2,7 @@
   <div>
     <span class="trade-eyebrow">AUTOMATION</span>
     <h1>Copy Trading</h1>
-    <p class="muted">Choose a master account and the child accounts that should follow its orders.</p>
+    <p class="muted">Copy supported futures orders from one Dhan master to Dhan and Angel One child accounts.</p>
   </div>
   <div class="copy-listener-indicator" [class.connected]="listenerConnected">
     <span class="trade-status-dot"></span>
@@ -26,8 +26,8 @@
 
   @if (loading && accounts.length === 0) {
     <div class="empty-state">Loading saved accounts...</div>
-  } @else if (accounts.length < 2) {
-    <div class="empty-state">Save at least two Dhan accounts on the Login page to configure a master and child.</div>
+  } @else if (!canConfigure) {
+    <div class="empty-state">Save at least one Dhan master and one other account on the Login page. Other Dhan and Angel One accounts can both be children.</div>
   } @else {
     <div class="copy-settings-layout">
       <div class="copy-master-panel">
@@ -35,7 +35,7 @@
           <label for="masterAccount">Master account</label>
           <select id="masterAccount" [(ngModel)]="masterClientId" (ngModelChange)="onMasterChange()">
             <option value="">Select master account</option>
-            @for (account of accounts; track account.dhanClientId) {
+            @for (account of masterAccounts; track account.dhanClientId) {
               <option [value]="account.dhanClientId">{{ account.accountName }} ({{ account.dhanClientId }})</option>
             }
           </select>
@@ -71,7 +71,7 @@
         @if (!masterClientId) {
           <div class="empty-state">Select a master account to choose child accounts.</div>
         } @else if (childRows.length === 0) {
-          <div class="empty-state">No other saved accounts are available.</div>
+          <div class="empty-state">No other saved accounts are available as children.</div>
         } @else {
           <div class="trade-account-list">
             @for (row of childRows; track row.account.dhanClientId) {
@@ -79,7 +79,7 @@
                 <input type="checkbox" [(ngModel)]="row.enabled" (ngModelChange)="markSettingsDirty()" [disabled]="saving" />
                 <span class="trade-account-details">
                   <span class="trade-account-name">{{ row.account.accountName }}</span>
-                  <span class="trade-account-id">{{ row.account.dhanClientId }}</span>
+                  <span class="trade-account-id">{{ row.account.broker || 'DHAN' }} · {{ row.account.dhanClientId }}</span>
                 </span>
                 <span class="trade-account-status" [class.connected]="row.account.isConnected">
                   <span class="trade-status-dot"></span>
@@ -102,7 +102,7 @@
 
     <div class="copy-save-row">
       <span class="muted">{{ settingsDirty ? 'Unsaved configuration changes.' : 'Saving applies immediately while the API is running.' }}</span>
-      <button type="button" [disabled]="saving || accounts.length < 2" (click)="saveSettings()">
+      <button type="button" [disabled]="saving || !canConfigure" (click)="saveSettings()">
         {{ saving ? 'Saving...' : 'Save configuration' }}
       </button>
     </div>
@@ -113,17 +113,16 @@
   <h2>How order detection works</h2>
   <p>
     Dhan's <a href="https://dhanhq.co/docs/v2/order-update/" target="_blank" rel="noopener noreferrer">Live Order Update WebSocket documentation</a>
-    says an individual account receives updates for orders placed through any platform. This includes orders placed in Dhan's app.
-    The API monitors the configured master and copies supported BUY/SELL orders to enabled children, including supported
-    pending-order price/quantity/type/validity changes and cancellations. These updates only apply when the corresponding
-    child order is still pending and Dhan accepts the request. Bracket/cover, after-market, and disclosed-quantity orders
-    are reported as unsupported rather than silently altered.
+    provides the master order stream. Orders are routed to each enabled child using that account's broker integration.
+    Angel One children require an unambiguous matching futures contract by underlying and expiry. Supported pending-order
+    changes and cancellations are sent through the child broker's API. Bracket/cover, after-market, disclosed-quantity,
+    unsupported product/validity, and ambiguous/missing contract mappings are rejected rather than silently altered.
   </p>
   <p class="muted">
     Copying only runs while this API is online and connected. Each observed master order is recorded once; child orders use a stable
-    correlation ID and the order status stream to suppress repeats. Dhan documents correlation IDs for tracking, not as an exactly-once
+    correlation ID for tracking. Dhan documents correlation IDs for tracking, not as an exactly-once
     guarantee; a network failure at submission time can still be ambiguous. Copying does not guarantee matching execution
-    prices, fills, available funds, or that Dhan will accept every child order.
+    prices, fills, available funds, or that either broker will accept every child order.
   </p>
   @if (listenerMessage) {
     <div class="status-line" [class.error]="!listenerConnected">{{ listenerMessage }}</div>

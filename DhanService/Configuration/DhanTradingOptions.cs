@@ -23,6 +23,13 @@ namespace DhanService.Configuration
         /// <summary>Base URL for Dhan trading/data endpoints.</summary>
         public string ApiBaseUrl { get; set; } = "https://api.dhan.co";
 
+        /// <summary>Base URL for Angel One SmartAPI endpoints.</summary>
+        public string AngelOneApiBaseUrl { get; set; } = "https://apiconnect.angelone.in";
+
+        /// <summary>Angel One scrip-master JSON URL used to resolve equivalent futures contracts.</summary>
+        public string AngelOneInstrumentMasterUrl { get; set; } =
+            "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
+
         /// <summary>URL of the Dhan compact instrument master CSV.</summary>
         public string InstrumentMasterUrl { get; set; } = "https://images.dhan.co/api-data/api-scrip-master.csv";
 

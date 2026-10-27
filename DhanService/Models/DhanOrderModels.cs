@@ -31,15 +31,25 @@ namespace DhanService.Models
     {
         public string AccountName { get; set; } = string.Empty;
         public string DhanClientId { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public bool Success { get; set; }
         public string? OrderId { get; set; }
         public string? OrderStatus { get; set; }
         public string? ErrorMessage { get; set; }
+        public string? BrokerTradingSymbol { get; set; }
+        public string? BrokerSecurityId { get; set; }
+        public int? BrokerQuantity { get; set; }
     }
 
     public class ModifyDhanOrderRequest
     {
         public string DhanClientId { get; set; } = string.Empty;
+        public string TradingSymbol { get; set; } = string.Empty;
+        public string SecurityId { get; set; } = string.Empty;
+        public string MasterSecurityId { get; set; } = string.Empty;
+        public string ExchangeSegment { get; set; } = string.Empty;
+        public string ProductType { get; set; } = string.Empty;
+        public string TransactionType { get; set; } = string.Empty;
         public string OrderId { get; set; } = string.Empty;
         public string OrderType { get; set; } = string.Empty;
         public int Quantity { get; set; }
@@ -52,6 +62,7 @@ namespace DhanService.Models
     public class DhanLoginResultDto
     {
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string DhanClientId { get; set; } = string.Empty;
         public bool Success { get; set; }
         public DateTime? ExpiryUtc { get; set; }

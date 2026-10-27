@@ -283,6 +283,7 @@ namespace DhanService.Services
                 {
                     DhanClientId = child.DhanClientId,
                     AccountName = account?.AccountName ?? child.DhanClientId,
+                    Broker = account?.Broker ?? "DHAN",
                     CorrelationId = CreateCorrelationId(master.DhanClientId, masterOrderId, child.DhanClientId)
                 });
             }
@@ -328,12 +329,12 @@ namespace DhanService.Services
                     continue;
                 }
 
-                var previousQuantity = child.MirroredQuantity ?? existingOrder.Quantity;
+                var masterQuantityChanged = existingOrder.Quantity != updatedOrder.Quantity;
                 var previousOrderType = child.MirroredOrderType ?? existingOrder.OrderType;
                 var previousPrice = child.MirroredPrice ?? existingOrder.Price;
                 var previousTriggerPrice = child.MirroredTriggerPrice ?? existingOrder.TriggerPrice;
                 var previousValidity = child.MirroredValidity ?? existingOrder.Validity;
-                if (previousQuantity == updatedOrder.Quantity &&
+                if (!masterQuantityChanged &&
                     string.Equals(previousOrderType, updatedOrder.OrderType, StringComparison.OrdinalIgnoreCase) &&
                     previousPrice == updatedOrder.Price &&
                     previousTriggerPrice == updatedOrder.TriggerPrice &&
@@ -343,10 +344,10 @@ namespace DhanService.Services
                 }
 
                 _logger.LogInformation(
-                    "Mirroring update for master order {MasterOrderId} to child {ClientId}: quantity {OldQuantity} -> {NewQuantity}, status {ChildStatus}",
+                    "Mirroring update for master order {MasterOrderId} to child {ClientId}: master quantity {OldQuantity} -> {NewQuantity}, status {ChildStatus}",
                     existingOrder.MasterOrderId,
                     child.DhanClientId,
-                    previousQuantity,
+                    existingOrder.Quantity,
                     updatedOrder.Quantity,
                     child.OrderStatus);
 
@@ -364,6 +365,12 @@ namespace DhanService.Services
                     {
                         DhanClientId = child.DhanClientId,
                         OrderId = child.OrderId,
+                        TradingSymbol = child.BrokerTradingSymbol ?? string.Empty,
+                        SecurityId = child.BrokerSecurityId ?? string.Empty,
+                        MasterSecurityId = updatedOrder.SecurityId,
+                        ExchangeSegment = updatedOrder.ExchangeSegment,
+                        ProductType = updatedOrder.ProductType,
+                        TransactionType = updatedOrder.TransactionType,
                         OrderType = updatedOrder.OrderType,
                         Quantity = updatedOrder.Quantity,
                         Price = updatedOrder.Price,
@@ -462,7 +469,7 @@ namespace DhanService.Services
                 var permanentFailure = false;
                 try
                 {
-                    var validationError = ValidateCopyOrder(order);
+                    var validationError = ValidateCopyOrder(order, child.Broker);
                     if (validationError is not null)
                     {
                         permanentFailure = true;
@@ -508,7 +515,7 @@ namespace DhanService.Services
             }
         }
 
-        private static string? ValidateCopyOrder(CopyTradingOrderRecord order)
+        private static string? ValidateCopyOrder(CopyTradingOrderRecord order, string childBroker)
         {
             if (string.IsNullOrWhiteSpace(order.SecurityId) || string.IsNullOrWhiteSpace(order.ExchangeSegment))
             {
@@ -534,6 +541,17 @@ namespace DhanService.Services
             if (order.Quantity <= 0)
             {
                 return "The master order quantity is invalid.";
+            }
+            if (string.Equals(childBroker, "ANGELONE", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.Equals(order.Validity, "DAY", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Angel One futures orders currently support DAY validity only.";
+                }
+                if (order.ProductType is not ("MARGIN" or "INTRADAY"))
+                {
+                    return $"Angel One futures does not support the master product type '{order.ProductType}'.";
+                }
             }
             if ((order.OrderType is "LIMIT" or "STOP_LOSS") && order.Price <= 0)
             {

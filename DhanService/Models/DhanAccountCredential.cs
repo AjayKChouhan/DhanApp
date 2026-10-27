@@ -8,18 +8,26 @@ namespace DhanService.Models
     public class DhanAccountCredential
     {
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string DhanClientId { get; set; } = string.Empty;
         public string ProtectedPin { get; set; } = string.Empty;
         public string ProtectedTotpSecret { get; set; } = string.Empty;
+        public string ProtectedAngelPassword { get; set; } = string.Empty;
+        public string ProtectedAngelApiKey { get; set; } = string.Empty;
+        public string ProtectedAngelTotpSecret { get; set; } = string.Empty;
     }
 
     /// <summary>Request payload for a single account, submitted in plaintext from the setup form.</summary>
     public class SaveDhanAccountRequest
     {
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string DhanClientId { get; set; } = string.Empty;
+        public string ClientCode { get; set; } = string.Empty;
         public string Pin { get; set; } = string.Empty;
         public string TotpSecret { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string ApiKey { get; set; } = string.Empty;
     }
 
     /// <summary>Request payload for saving the full list of accounts at once.</summary>
@@ -32,6 +40,7 @@ namespace DhanService.Models
     public class DhanAccountStatusDto
     {
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string DhanClientId { get; set; } = string.Empty;
         public bool IsConnected { get; set; }
         public DateTime? TokenExpiryUtc { get; set; }

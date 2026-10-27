@@ -11,6 +11,7 @@ namespace DhanService.Services
     {
         /// <summary>Returns the list of currently tradable futures (index + stock) contracts for the given exchange (NSE, BSE or MCX).</summary>
         Task<IReadOnlyList<FuturesInstrument>> GetFuturesAsync(string exchange, CancellationToken cancellationToken = default);
+        Task<FuturesInstrument?> FindFutureBySecurityIdAsync(string securityId, CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -89,6 +90,22 @@ namespace DhanService.Services
             _cache.Set(cacheKey, instruments, TimeSpan.FromHours(Math.Max(1, _options.InstrumentCacheHours)));
             _logger.LogInformation("Cached {Count} {Exchange} futures instruments", instruments.Count, normalizedExchange);
             return instruments;
+        }
+
+        public async Task<FuturesInstrument?> FindFutureBySecurityIdAsync(
+            string securityId, CancellationToken cancellationToken = default)
+        {
+            foreach (var exchange in ExchangeSettings.Keys)
+            {
+                var instruments = await GetFuturesAsync(exchange, cancellationToken);
+                var match = instruments.FirstOrDefault(instrument =>
+                    string.Equals(instrument.SecurityId, securityId, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    return match;
+                }
+            }
+            return null;
         }
 
         private List<FuturesInstrument> Parse(string csv, string exchange, string segment, string exchangeSegmentLabel)

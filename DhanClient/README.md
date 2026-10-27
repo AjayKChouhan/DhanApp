@@ -46,12 +46,34 @@ ng test
 
 ## Copy Trading
 
-Open **Copy Trading** to choose a saved master account, enable child accounts, and monitor per-account order results.
-The API listens to Dhan's [Live Order Update WebSocket](https://dhanhq.co/docs/v2/order-update/), which documents updates
-for an individual account's orders irrespective of the platform used to place them. The API must remain running for live
-copying. Supported pending-order modifications (price, quantity, order type, and validity) and cancellations are mirrored
-to the child orders using Dhan's order APIs. They can fail if a child order is no longer pending or Dhan rejects the change.
-Bracket/cover, after-market, and disclosed-quantity orders are reported as unsupported.
+The copy setup supports one Dhan master with Dhan and Angel One futures children. The API listens to Dhan's
+[Live Order Update WebSocket](https://dhanhq.co/docs/v2/order-update/) and resolves the matching underlying and expiry
+from Angel One's instrument master for Angel One children. Missing or ambiguous contracts are rejected. Supported
+pending-order changes and cancellations are routed through the relevant child broker; the API polls Angel One's order
+book for Angel One child statuses and listens to Dhan order updates for Dhan child statuses. The API must remain running.
+The master order's lot count is derived from its Dhan contract quantity and lot size, then converted using the child
+broker's lot size; equal lot sizes are not required.
+
+Add Angel One accounts to `DhanAPI/App_Data/DhanTrading/dhan-accounts.local.json` using the following property names
+(use your own values locally; never commit this ignored plaintext file):
+
+```json
+{
+  "accountName": "Angel One account",
+  "broker": "ANGELONE",
+  "clientCode": "YOUR_CLIENT_CODE",
+  "password": "YOUR_PASSWORD_OR_PIN",
+  "apiKey": "YOUR_API_KEY",
+  "totpSecret": "YOUR_BASE32_TOTP_SECRET"
+}
+```
+
+The file is an array, so add the object alongside the existing Dhan account objects. Dhan entries continue to use
+`dhanClientId`, `pin`, and `totpSecret`. Click **Login All Accounts** to import credentials into the protected local
+account store and create an Angel One session. The source JSON remains plaintext on disk and must remain private.
+
+Cross-broker copying is not an execution guarantee. Orders can be rejected or filled at different prices, and a delayed
+network response can still leave order submission uncertain.
 
 Copy settings and activity are stored in the existing encrypted local JSON data store under
 `DhanAPI/App_Data/DhanTrading`; this project currently does not use a SQL database.

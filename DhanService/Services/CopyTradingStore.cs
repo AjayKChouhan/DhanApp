@@ -24,6 +24,7 @@ namespace DhanService.Services
         Task UpdateChildSubmissionAsync(string masterClientId, string masterOrderId, string childClientId, DhanOrderResultDto result, bool permanentFailure = false, CancellationToken cancellationToken = default);
         Task UpdateChildCopyActionAsync(string masterClientId, string masterOrderId, string childClientId, string action, DhanOrderResultDto result, CopyTradingOrderRecord? mirroredOrder = null, CancellationToken cancellationToken = default);
         Task UpdateChildOrderStatusAsync(string clientId, string correlationId, string orderId, string status, string? errorMessage, CancellationToken cancellationToken = default);
+        Task UpdateChildOrderStatusByOrderIdAsync(string clientId, string orderId, string status, string? errorMessage, CancellationToken cancellationToken = default);
         Task<bool> RetryChildCopyAsync(string masterClientId, string masterOrderId, string childClientId, CancellationToken cancellationToken = default);
         Task ResetInterruptedCopiesAsync(CancellationToken cancellationToken = default);
         ValueTask<bool> WaitForSettingsChangeAsync(CancellationToken cancellationToken = default);
@@ -261,6 +262,8 @@ namespace DhanService.Services
                 {
                     child.OrderId = result.OrderId;
                 }
+                child.BrokerTradingSymbol = result.BrokerTradingSymbol ?? child.BrokerTradingSymbol;
+                child.BrokerSecurityId = result.BrokerSecurityId ?? child.BrokerSecurityId;
                 if (child.LastStatusUpdateUtc is null)
                 {
                     child.OrderStatus = result.OrderStatus;
@@ -271,7 +274,7 @@ namespace DhanService.Services
                     var order = FindOrder(masterClientId, masterOrderId);
                     if (order is not null)
                     {
-                        child.MirroredQuantity = order.Quantity;
+                        child.MirroredQuantity = result.BrokerQuantity ?? order.Quantity;
                         child.MirroredOrderType = order.OrderType;
                         child.MirroredPrice = order.Price;
                         child.MirroredTriggerPrice = order.TriggerPrice;
@@ -311,9 +314,11 @@ namespace DhanService.Services
                     child.OrderId = result.OrderId ?? child.OrderId;
                     child.OrderStatus = result.OrderStatus;
                     child.LastStatusUpdateUtc = DateTime.UtcNow;
+                    child.BrokerTradingSymbol = result.BrokerTradingSymbol ?? child.BrokerTradingSymbol;
+                    child.BrokerSecurityId = result.BrokerSecurityId ?? child.BrokerSecurityId;
                     if (string.Equals(action, "MODIFY", StringComparison.OrdinalIgnoreCase) && mirroredOrder is not null)
                     {
-                        child.MirroredQuantity = mirroredOrder.Quantity;
+                        child.MirroredQuantity = result.BrokerQuantity ?? mirroredOrder.Quantity;
                         child.MirroredOrderType = mirroredOrder.OrderType;
                         child.MirroredPrice = mirroredOrder.Price;
                         child.MirroredTriggerPrice = mirroredOrder.TriggerPrice;
@@ -374,6 +379,37 @@ namespace DhanService.Services
                 {
                     child.OrderId = orderId;
                 }
+                child.OrderStatus = status;
+                child.LastStatusUpdateUtc = DateTime.UtcNow;
+                child.ErrorMessage = string.Equals(status, "REJECTED", StringComparison.OrdinalIgnoreCase)
+                    ? errorMessage
+                    : null;
+                await PersistAsync(cancellationToken);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task UpdateChildOrderStatusByOrderIdAsync(
+            string clientId, string orderId, string status, string? errorMessage,
+            CancellationToken cancellationToken = default)
+        {
+            await _lock.WaitAsync(cancellationToken);
+            try
+            {
+                await EnsureLoadedAsync(cancellationToken);
+                var child = _state!.Orders
+                    .SelectMany(order => order.Children)
+                    .FirstOrDefault(candidate =>
+                        string.Equals(candidate.DhanClientId, clientId, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(candidate.OrderId, orderId, StringComparison.OrdinalIgnoreCase));
+                if (child is null)
+                {
+                    return;
+                }
+
                 child.OrderStatus = status;
                 child.LastStatusUpdateUtc = DateTime.UtcNow;
                 child.ErrorMessage = string.Equals(status, "REJECTED", StringComparison.OrdinalIgnoreCase)

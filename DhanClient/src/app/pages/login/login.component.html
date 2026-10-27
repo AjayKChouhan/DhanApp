@@ -1,8 +1,8 @@
 <section class="card">
   <h2>Manage Accounts</h2>
   <p class="muted">
-    Saving replaces the <em>entire</em> saved account list, so re-enter the PIN and TOTP secret
-    for every account you want to keep (secrets are never sent back to the browser once saved).
+    Saving replaces the <em>entire</em> saved account list. Re-enter credentials for every account you want to keep;
+    secrets are never sent back to the browser once saved.
   </p>
   <div id="accountRows">
     @for (account of accounts; track $index) {
@@ -12,13 +12,35 @@
           <input type="text" placeholder="e.g. John's Account" [(ngModel)]="account.accountName" />
         </div>
         <div class="field">
-          <label>Dhan Client ID</label>
-          <input type="text" placeholder="1000000001" [(ngModel)]="account.dhanClientId" />
+          <label>Broker</label>
+          <select [(ngModel)]="account.broker">
+            <option value="DHAN">Dhan</option>
+            <option value="ANGELONE">Angel One</option>
+          </select>
         </div>
-        <div class="field">
-          <label>PIN</label>
-          <input type="password" placeholder="PIN" [(ngModel)]="account.pin" />
-        </div>
+        @if (account.broker === 'ANGELONE') {
+          <div class="field">
+            <label>Angel One Client Code</label>
+            <input type="text" placeholder="Client code" [(ngModel)]="account.clientCode" />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input type="password" placeholder="Password" [(ngModel)]="account.password" />
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <input type="password" placeholder="API key" [(ngModel)]="account.apiKey" />
+          </div>
+        } @else {
+          <div class="field">
+            <label>Dhan Client ID</label>
+            <input type="text" placeholder="Client ID" [(ngModel)]="account.dhanClientId" />
+          </div>
+          <div class="field">
+            <label>PIN</label>
+            <input type="password" placeholder="PIN" [(ngModel)]="account.pin" />
+          </div>
+        }
         <div class="field">
           <label>TOTP Secret</label>
           <input type="text" placeholder="Base32 secret" [(ngModel)]="account.totpSecret" />
@@ -52,7 +74,8 @@
       <thead>
         <tr>
           <th>Account Name</th>
-          <th>Dhan Client ID</th>
+          <th>Broker</th>
+          <th>Client ID</th>
           <th>Connected</th>
           <th>Token Expiry (UTC)</th>
         </tr>
@@ -61,6 +84,7 @@
         @for (row of statusRows; track row.dhanClientId) {
           <tr>
             <td>{{ row.accountName }}</td>
+            <td>{{ row.broker }}</td>
             <td>{{ row.dhanClientId }}</td>
             <td><span class="badge" [class.ok]="row.isConnected" [class.fail]="!row.isConnected">{{ row.isConnected ? 'SUCCESS' : 'FAILED' }}</span></td>
             <td>{{ row.tokenExpiryUtc ? (row.tokenExpiryUtc | date:'medium') : '-' }}</td>
@@ -86,7 +110,8 @@
       <thead>
         <tr>
           <th>Account Name</th>
-          <th>Dhan Client ID</th>
+          <th>Broker</th>
+          <th>Client ID</th>
           <th>Result</th>
           <th>Expiry (UTC)</th>
           <th>Error</th>
@@ -96,6 +121,7 @@
         @for (row of loginResults; track row.dhanClientId) {
           <tr>
             <td>{{ row.accountName }}</td>
+            <td>{{ row.broker }}</td>
             <td>{{ row.dhanClientId }}</td>
             <td><span class="badge" [class.ok]="row.success" [class.fail]="!row.success">{{ row.success ? 'SUCCESS' : 'FAILED' }}</span></td>
             <td>{{ row.expiryUtc ? (row.expiryUtc | date:'medium') : '-' }}</td>

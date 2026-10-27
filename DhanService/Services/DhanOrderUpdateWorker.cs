@@ -26,6 +26,7 @@ namespace DhanService.Services
         private readonly ICopyTradingStore _store;
         private readonly IDhanAccountStore _accountStore;
         private readonly IDhanAuthService _authService;
+        private readonly IDhanOrderService _orderService;
         private readonly ICopyTradingService _copyTradingService;
         private readonly CopyTradingRuntimeStatus _runtimeStatus;
         private readonly ILogger<DhanOrderUpdateWorker> _logger;
@@ -34,6 +35,7 @@ namespace DhanService.Services
             ICopyTradingStore store,
             IDhanAccountStore accountStore,
             IDhanAuthService authService,
+            IDhanOrderService orderService,
             ICopyTradingService copyTradingService,
             CopyTradingRuntimeStatus runtimeStatus,
             ILogger<DhanOrderUpdateWorker> logger)
@@ -41,6 +43,7 @@ namespace DhanService.Services
             _store = store;
             _accountStore = accountStore;
             _authService = authService;
+            _orderService = orderService;
             _copyTradingService = copyTradingService;
             _runtimeStatus = runtimeStatus;
             _logger = logger;
@@ -55,36 +58,43 @@ namespace DhanService.Services
                 try
                 {
                     var settings = await _store.GetSettingsAsync(stoppingToken);
-                    if (!settings.Enabled || string.IsNullOrWhiteSpace(settings.MasterClientId))
+                    var masterClientId = settings.MasterClientId;
+                    if (!settings.Enabled || string.IsNullOrWhiteSpace(masterClientId))
                     {
-                        if (!string.IsNullOrWhiteSpace(settings.MasterClientId))
+                        if (!string.IsNullOrWhiteSpace(masterClientId))
                         {
-                            _runtimeStatus.Set(settings.MasterClientId, "Copy trading is paused.");
+                            _runtimeStatus.Set(masterClientId, "Copy trading is paused.");
                         }
                         await _store.WaitForSettingsChangeAsync(stoppingToken);
                         continue;
                     }
 
-                    var accountIds = settings.Children
-                        .Where(child => child.Enabled)
-                        .Select(child => child.DhanClientId)
-                        .Append(settings.MasterClientId)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    if (accountIds.Count <= 1)
+                    if (!settings.Children.Any(child => child.Enabled))
                     {
-                        _runtimeStatus.Set(settings.MasterClientId, "Enable at least one child account to start order monitoring.");
+                        _runtimeStatus.Set(masterClientId, "Enable at least one child account to start order monitoring.");
                         await _store.WaitForSettingsChangeAsync(stoppingToken);
                         continue;
                     }
 
+                    var requiredMasterClientId = masterClientId
+                        ?? throw new InvalidOperationException("Enabled copy trading requires a master account.");
                     await _copyTradingService.ProcessReadyCopiesAsync(stoppingToken);
                     var accounts = await _accountStore.GetAllAsync(stoppingToken);
+                    var enabledDhanChildIds = settings.Children
+                        .Where(child => child.Enabled)
+                        .Select(child => accounts.FirstOrDefault(account =>
+                            string.Equals(account.DhanClientId, child.DhanClientId, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(account.Broker, "DHAN", StringComparison.OrdinalIgnoreCase))?.DhanClientId)
+                        .Where(clientId => !string.IsNullOrWhiteSpace(clientId))
+                        .OfType<string>()
+                        .Distinct(StringComparer.OrdinalIgnoreCase);
 
                     using var session = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    var connectionTasks = accountIds
+                    var connectionTasks = enabledDhanChildIds
+                        .Prepend(requiredMasterClientId)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
                         .Select(clientId => RunAccountSocketAsync(clientId, accounts, session.Token))
+                        .Append(PollAngelChildStatusesAsync(settings.Children, accounts, session.Token))
                         .ToArray();
                     var connectionEnded = Task.WhenAny(connectionTasks);
                     var configurationChanged = _store.WaitForSettingsChangeAsync(session.Token).AsTask();
@@ -95,6 +105,7 @@ namespace DhanService.Services
                     {
                         await configurationChanged;
                     }
+
                     else if (!stoppingToken.IsCancellationRequested)
                     {
                         _logger.LogWarning("A Dhan order-update connection ended. Reconnecting after a short delay.");
@@ -118,6 +129,61 @@ namespace DhanService.Services
             }
         }
 
+        private async Task PollAngelChildStatusesAsync(
+            IReadOnlyList<DhanService.Models.CopyTradingChildSetting> children,
+            IReadOnlyList<DhanService.Models.DhanAccountCredential> accounts,
+            CancellationToken cancellationToken)
+        {
+            var angelChildIds = children
+                .Where(child => child.Enabled)
+                .Select(child => accounts.FirstOrDefault(account =>
+                    string.Equals(account.DhanClientId, child.DhanClientId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase)))
+                .Where(account => account is not null)
+                .Select(account => account!.DhanClientId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                foreach (var clientId in angelChildIds)
+                {
+                    var result = await _orderService.GetOrdersAsync(clientId, cancellationToken);
+                    if (!result.Success || result.Orders is not { ValueKind: JsonValueKind.Array } orders)
+                    {
+                        _logger.LogWarning("Angel One order status polling failed for account {ClientId}: {Error}",
+                            clientId, result.ErrorMessage);
+                        continue;
+                    }
+
+                    foreach (var order in orders.EnumerateArray())
+                    {
+                        var orderId = ReadJsonText(order, "orderId");
+                        if (string.IsNullOrWhiteSpace(orderId))
+                        {
+                            continue;
+                        }
+
+                        await _store.UpdateChildOrderStatusByOrderIdAsync(
+                            clientId,
+                            orderId,
+                            ReadJsonText(order, "orderStatus") ?? string.Empty,
+                            ReadJsonText(order, "reasonDescription"),
+                            cancellationToken);
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+        }
+
+        private static string? ReadJsonText(JsonElement element, string propertyName) =>
+            element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(propertyName, out var property) &&
+            property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+
         private async Task RunAccountSocketAsync(
             string clientId,
             IReadOnlyList<DhanService.Models.DhanAccountCredential> accounts,
@@ -129,6 +195,12 @@ namespace DhanService.Services
             {
                 _runtimeStatus.Set(clientId, "Account is no longer saved.");
                 _logger.LogWarning("Dhan order-update monitoring skipped: account {ClientId} is not saved.", clientId);
+                return;
+            }
+            if (!string.Equals(account.Broker, "DHAN", StringComparison.OrdinalIgnoreCase))
+            {
+                _runtimeStatus.Set(clientId, "The configured copy-trading master must be a Dhan account.");
+                _logger.LogWarning("Dhan order-update monitoring skipped: configured master {ClientId} is not a Dhan account.", clientId);
                 return;
             }
 

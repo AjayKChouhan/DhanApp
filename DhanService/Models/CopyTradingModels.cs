@@ -41,6 +41,7 @@ namespace DhanService.Models
     {
         public string DhanClientId { get; set; } = string.Empty;
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string CorrelationId { get; set; } = string.Empty;
         public string CopyState { get; set; } = "READY";
         public string? OrderId { get; set; }
@@ -52,6 +53,8 @@ namespace DhanService.Models
         public decimal? MirroredPrice { get; set; }
         public decimal? MirroredTriggerPrice { get; set; }
         public string? MirroredValidity { get; set; }
+        public string? BrokerTradingSymbol { get; set; }
+        public string? BrokerSecurityId { get; set; }
     }
 
     public class CopyTradingDashboardDto

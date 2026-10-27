@@ -1,4 +1,8 @@
 using System.Net.Http.Json;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,6 +43,9 @@ namespace DhanService.Services
         private readonly IDhanTokenStore _tokenStore;
         private readonly DhanTradingOptions _options;
         private readonly ILogger<DhanAuthService> _logger;
+        private readonly SemaphoreSlim _publicIpLock = new(1, 1);
+        private string? _cachedPublicIp;
+        private DateTime _publicIpCacheExpiryUtc;
 
         public DhanAuthService(
             HttpClient httpClient,
@@ -58,6 +65,11 @@ namespace DhanService.Services
         {
             try
             {
+                if (string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await LoginAngelOneAccountAsync(account, cancellationToken);
+                }
+
                 var pin = _accountStore.UnprotectPin(account);
                 var totpSecret = _accountStore.UnprotectTotpSecret(account);
                 var totpCode = ComputeTotp(totpSecret);
@@ -77,6 +89,7 @@ namespace DhanService.Services
                     return new DhanLoginResultDto
                     {
                         AccountName = account.AccountName,
+                        Broker = "DHAN",
                         DhanClientId = account.DhanClientId,
                         Success = false,
                         ErrorMessage = $"{(int)response.StatusCode}: {body}"
@@ -91,6 +104,7 @@ namespace DhanService.Services
                     return new DhanLoginResultDto
                     {
                         AccountName = account.AccountName,
+                        Broker = "DHAN",
                         DhanClientId = account.DhanClientId,
                         Success = false,
                         ErrorMessage = "Dhan returned an empty access token."
@@ -101,6 +115,7 @@ namespace DhanService.Services
                 var token = new Token
                 {
                     AccountName = account.AccountName,
+                    Broker = "DHAN",
                     DhanClientId = account.DhanClientId,
                     AccessToken = parsed.AccessToken,
                     ExpiryTimeUtc = expiryUtc
@@ -111,6 +126,7 @@ namespace DhanService.Services
                 return new DhanLoginResultDto
                 {
                     AccountName = account.AccountName,
+                    Broker = "DHAN",
                     DhanClientId = account.DhanClientId,
                     Success = true,
                     ExpiryUtc = expiryUtc
@@ -139,7 +155,7 @@ namespace DhanService.Services
 
         public async Task<Token?> EnsureValidTokenAsync(DhanAccountCredential account, CancellationToken cancellationToken = default)
         {
-            var existing = await _tokenStore.GetAsync(account.DhanClientId, cancellationToken);
+            var existing = await _tokenStore.GetAsync(account.DhanClientId, account.Broker, cancellationToken);
             if (existing is not null && !existing.IsNearExpiry(_options.TokenRefreshThresholdMinutes))
             {
                 return existing;
@@ -151,35 +167,187 @@ namespace DhanService.Services
                 return null;
             }
 
-            return await _tokenStore.GetAsync(account.DhanClientId, cancellationToken);
+            return await _tokenStore.GetAsync(account.DhanClientId, account.Broker, cancellationToken);
         }
 
-        public async Task<string> GetPublicIpAddressAsync(CancellationToken cancellationToken = default)
+        private async Task<DhanLoginResultDto> LoginAngelOneAccountAsync(
+            DhanAccountCredential account, CancellationToken cancellationToken)
         {
             try
             {
-                var ip = await _httpClient.GetStringAsync("https://api.ipify.org?format=text", cancellationToken);
-                return ip.Trim();
+                var apiKey = _accountStore.UnprotectAngelApiKey(account);
+                var payload = new
+                {
+                    clientcode = account.DhanClientId,
+                    password = _accountStore.UnprotectAngelPassword(account),
+                    totp = ComputeTotp(_accountStore.UnprotectAngelTotpSecret(account))
+                };
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"{_options.AngelOneApiBaseUrl.TrimEnd('/')}/rest/auth/angelbroking/user/v1/loginByPassword")
+                {
+                    Content = JsonContent.Create(payload)
+                };
+                AddAngelHeaders(request, apiKey, await GetPublicIpAddressAsync(cancellationToken));
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Angel One login failed for account {Account} ({ClientId}): {Status}",
+                        account.AccountName, account.DhanClientId, response.StatusCode);
+                    return LoginFailure(account, $"{(int)response.StatusCode}: {body}");
+                }
+
+                using var document = JsonDocument.Parse(body);
+                var data = document.RootElement.TryGetProperty("data", out var responseData)
+                    ? responseData
+                    : default;
+                var jwtToken = ReadJsonText(data, "jwtToken");
+                if (string.IsNullOrWhiteSpace(jwtToken))
+                {
+                    return LoginFailure(account, "Angel One returned an empty access token.");
+                }
+
+                var expiryUtc = DateTime.UtcNow.AddHours(12);
+                await _tokenStore.SaveAsync(new Token
+                {
+                    AccountName = account.AccountName,
+                    Broker = "ANGELONE",
+                    DhanClientId = account.DhanClientId,
+                    AccessToken = jwtToken,
+                    FeedToken = ReadJsonText(data, "feedToken") ?? string.Empty,
+                    ExpiryTimeUtc = expiryUtc
+                }, cancellationToken);
+
+                return new DhanLoginResultDto
+                {
+                    AccountName = account.AccountName,
+                    Broker = "ANGELONE",
+                    DhanClientId = account.DhanClientId,
+                    Success = true,
+                    ExpiryUtc = expiryUtc
+                };
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(ex, "Primary IP-detection service (ipify) failed, falling back to checkip.amazonaws.com");
-                var ip = await _httpClient.GetStringAsync("https://checkip.amazonaws.com", cancellationToken);
-                return ip.Trim();
+                _logger.LogError(ex, "Unexpected error logging in Angel One account {Account} ({ClientId})",
+                    account.AccountName, account.DhanClientId);
+                return LoginFailure(account, ex.Message);
+            }
+        }
+
+        private static void AddAngelHeaders(HttpRequestMessage request, string apiKey, string publicIp)
+        {
+            request.Headers.Add("X-UserType", "USER");
+            request.Headers.Add("X-SourceID", "WEB");
+            request.Headers.Add("X-ClientLocalIP", GetLocalIpAddress());
+            request.Headers.Add("X-ClientPublicIP", publicIp);
+            request.Headers.Add("X-MACAddress", GetMacAddress());
+            request.Headers.Add("X-PrivateKey", apiKey);
+            request.Headers.Add("Accept", "application/json");
+        }
+
+        internal static void AddAngelAuthorizationHeaders(
+            HttpRequestMessage request, string apiKey, string accessToken, string publicIp)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+            request.Headers.Add("X-PrivateKey", apiKey);
+            request.Headers.Add("X-UserType", "USER");
+            request.Headers.Add("X-SourceID", "WEB");
+            request.Headers.Add("X-ClientLocalIP", GetLocalIpAddress());
+            request.Headers.Add("X-ClientPublicIP", publicIp);
+            request.Headers.Add("X-MACAddress", GetMacAddress());
+            request.Headers.Add("Accept", "application/json");
+        }
+
+        private static string GetLocalIpAddress() =>
+            Dns.GetHostAddresses(Dns.GetHostName())
+                .FirstOrDefault(address => address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                ?.ToString() ?? "127.0.0.1";
+
+        private static string GetMacAddress() =>
+            NetworkInterface.GetAllNetworkInterfaces()
+                .Where(network => network.OperationalStatus == OperationalStatus.Up)
+                .Select(network => network.GetPhysicalAddress().ToString())
+                .FirstOrDefault(address => !string.IsNullOrWhiteSpace(address)) ?? "000000000000";
+
+        private static string? ReadJsonText(JsonElement element, string propertyName) =>
+            element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(propertyName, out var property) &&
+            property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+
+        private static DhanLoginResultDto LoginFailure(DhanAccountCredential account, string error) => new()
+        {
+            AccountName = account.AccountName,
+            Broker = account.Broker,
+            DhanClientId = account.DhanClientId,
+            Success = false,
+            ErrorMessage = error
+        };
+
+        public async Task<string> GetPublicIpAddressAsync(CancellationToken cancellationToken = default)
+        {
+            await _publicIpLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_cachedPublicIp) && DateTime.UtcNow < _publicIpCacheExpiryUtc)
+                {
+                    return _cachedPublicIp;
+                }
+
+                try
+                {
+                    _cachedPublicIp = (await _httpClient.GetStringAsync(
+                        "https://api.ipify.org?format=text", cancellationToken)).Trim();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Primary IP-detection service (ipify) failed, falling back to checkip.amazonaws.com");
+                    _cachedPublicIp = (await _httpClient.GetStringAsync(
+                        "https://checkip.amazonaws.com", cancellationToken)).Trim();
+                }
+
+                _publicIpCacheExpiryUtc = DateTime.UtcNow.AddMinutes(5);
+                return _cachedPublicIp;
+            }
+            finally
+            {
+                _publicIpLock.Release();
             }
         }
 
         public async Task<IReadOnlyList<DhanSetIpResultDto>> SetStaticIpForAllAccountsAsync(string ip, string ipFlag, CancellationToken cancellationToken = default)
         {
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
-            var tasks = accounts.Select(account => SetStaticIpForAccountAsync(account, ip, ipFlag, cancellationToken));
+            var tasks = accounts.Select(account =>
+                string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase)
+                    ? Task.FromResult(new DhanSetIpResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Success = false,
+                        ErrorMessage = "Static IP management is a Dhan-only feature."
+                    })
+                    : SetStaticIpForAccountAsync(account, ip, ipFlag, cancellationToken));
             return await Task.WhenAll(tasks);
         }
 
         public async Task<IReadOnlyList<DhanIpStatusResultDto>> GetStaticIpStatusForAllAccountsAsync(CancellationToken cancellationToken = default)
         {
             var accounts = await _accountStore.GetAllAsync(cancellationToken);
-            var tasks = accounts.Select(account => GetStaticIpStatusForAccountAsync(account, cancellationToken));
+            var tasks = accounts.Select(account =>
+                string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase)
+                    ? Task.FromResult(new DhanIpStatusResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Success = false,
+                        ErrorMessage = "Static IP management is a Dhan-only feature."
+                    })
+                    : GetStaticIpStatusForAccountAsync(account, cancellationToken));
             return await Task.WhenAll(tasks);
         }
 

@@ -14,18 +14,20 @@ namespace DhanService.Services
         Task SaveAllAsync(IEnumerable<SaveDhanAccountRequest> accounts, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Upserts accounts from "DhanTrading:Accounts" config (user-secrets/Key Vault) and
-        /// from the plaintext App_Data/DhanTrading/dhan-accounts.local.json file into the
-        /// saved store, keyed by DhanClientId. Returns the number seeded.
+        /// Upserts Dhan and Angel One accounts from configuration and the local JSON file
+        /// into the encrypted saved store, keyed by the broker account ID. Returns the number seeded.
         /// </summary>
         Task<int> SeedFromConfigurationAsync(CancellationToken cancellationToken = default);
         string UnprotectPin(DhanAccountCredential account);
         string UnprotectTotpSecret(DhanAccountCredential account);
+        string UnprotectAngelPassword(DhanAccountCredential account);
+        string UnprotectAngelApiKey(DhanAccountCredential account);
+        string UnprotectAngelTotpSecret(DhanAccountCredential account);
     }
 
     /// <summary>
-    /// Persists Dhan account credentials (PIN, TOTP secret) to a local JSON file,
-    /// encrypted at rest via ASP.NET Core Data Protection. Credentials are only
+    /// Persists broker account credentials to a local JSON file, encrypted at rest
+    /// via ASP.NET Core Data Protection. Credentials are only
     /// decrypted in-memory, on demand, when generating an access token.
     /// </summary>
     public class DhanAccountStore : IDhanAccountStore
@@ -51,9 +53,9 @@ namespace DhanService.Services
             Directory.CreateDirectory(folder);
             _filePath = Path.Combine(folder, "accounts.json");
 
-            // Plaintext, hand-editable alternative to user-secrets/Key Vault: fill in
-            // [{ "accountName", "dhanClientId", "pin", "totpSecret" }, ...] and click
-            // Login - no UI entry or CLI commands required. Lives under App_Data (gitignored).
+            // Plaintext, hand-editable alternative to user-secrets/Key Vault. Login
+            // imports these credentials into the protected saved-account store. The
+            // local file is gitignored; do not commit or share it.
             _plaintextAccountsFilePath = Path.Combine(folder, "dhan-accounts.local.json");
         }
 
@@ -76,13 +78,17 @@ namespace DhanService.Services
             try
             {
                 var toSave = accounts
-                    .Where(a => !string.IsNullOrWhiteSpace(a.DhanClientId))
+                    .Where(a => !string.IsNullOrWhiteSpace(GetAccountId(a)))
                     .Select(a => new DhanAccountCredential
                     {
-                        AccountName = string.IsNullOrWhiteSpace(a.AccountName) ? a.DhanClientId : a.AccountName.Trim(),
-                        DhanClientId = a.DhanClientId.Trim(),
-                        ProtectedPin = _protector.Protect(a.Pin ?? string.Empty),
-                        ProtectedTotpSecret = _protector.Protect(a.TotpSecret ?? string.Empty),
+                        AccountName = string.IsNullOrWhiteSpace(a.AccountName) ? GetAccountId(a) : a.AccountName.Trim(),
+                        Broker = NormalizeBroker(a.Broker),
+                        DhanClientId = GetAccountId(a).Trim(),
+                        ProtectedPin = ProtectIfNotEmpty(a.Pin),
+                        ProtectedTotpSecret = ProtectIfNotEmpty(a.TotpSecret),
+                        ProtectedAngelPassword = ProtectIfNotEmpty(a.Password),
+                        ProtectedAngelApiKey = ProtectIfNotEmpty(a.ApiKey),
+                        ProtectedAngelTotpSecret = ProtectIfNotEmpty(a.TotpSecret),
                     })
                     .ToList();
 
@@ -116,20 +122,37 @@ namespace DhanService.Services
                 var seededCount = 0;
                 foreach (var account in combined)
                 {
-                    if (string.IsNullOrWhiteSpace(account.DhanClientId) ||
-                        string.IsNullOrWhiteSpace(account.Pin) ||
-                        string.IsNullOrWhiteSpace(account.TotpSecret))
+                    var broker = NormalizeBroker(account.Broker);
+                    var accountId = GetAccountId(account);
+                    var validDhan = broker == "DHAN" &&
+                        !string.IsNullOrWhiteSpace(account.Pin) &&
+                        !string.IsNullOrWhiteSpace(account.TotpSecret);
+                    var validAngelOne = broker == "ANGELONE" &&
+                        !string.IsNullOrWhiteSpace(account.Password) &&
+                        !string.IsNullOrWhiteSpace(account.ApiKey) &&
+                        !string.IsNullOrWhiteSpace(account.TotpSecret);
+                    if (string.IsNullOrWhiteSpace(accountId) || (!validDhan && !validAngelOne))
                     {
                         continue;
                     }
 
-                    var clientId = account.DhanClientId.Trim();
+                    var clientId = accountId.Trim();
+                    if (byClientId.TryGetValue(clientId, out var existingAccount) &&
+                        !string.Equals(existingAccount.Broker, broker, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidDataException(
+                            $"Account ID '{clientId}' is configured for more than one broker; account IDs must be unique.");
+                    }
                     byClientId[clientId] = new DhanAccountCredential
                     {
                         AccountName = string.IsNullOrWhiteSpace(account.AccountName) ? clientId : account.AccountName.Trim(),
+                        Broker = broker,
                         DhanClientId = clientId,
-                        ProtectedPin = _protector.Protect(account.Pin),
-                        ProtectedTotpSecret = _protector.Protect(account.TotpSecret),
+                        ProtectedPin = ProtectIfNotEmpty(account.Pin),
+                        ProtectedTotpSecret = ProtectIfNotEmpty(broker == "DHAN" ? account.TotpSecret : null),
+                        ProtectedAngelPassword = ProtectIfNotEmpty(account.Password),
+                        ProtectedAngelApiKey = ProtectIfNotEmpty(account.ApiKey),
+                        ProtectedAngelTotpSecret = ProtectIfNotEmpty(broker == "ANGELONE" ? account.TotpSecret : null),
                     };
                     seededCount++;
                 }
@@ -152,6 +175,35 @@ namespace DhanService.Services
         public string UnprotectPin(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedPin);
 
         public string UnprotectTotpSecret(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedTotpSecret);
+
+        public string UnprotectAngelPassword(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedAngelPassword);
+
+        public string UnprotectAngelApiKey(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedAngelApiKey);
+
+        public string UnprotectAngelTotpSecret(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedAngelTotpSecret);
+
+        private string ProtectIfNotEmpty(string? secret) =>
+            string.IsNullOrEmpty(secret) ? string.Empty : _protector.Protect(secret);
+
+        private static string GetAccountId(SaveDhanAccountRequest account) =>
+            NormalizeBroker(account.Broker) == "ANGELONE"
+                ? (string.IsNullOrWhiteSpace(account.ClientCode) ? account.DhanClientId : account.ClientCode)
+                : account.DhanClientId;
+
+        private static string NormalizeBroker(string? broker)
+        {
+            if (string.IsNullOrWhiteSpace(broker) ||
+                string.Equals(broker.Trim(), "DHAN", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DHAN";
+            }
+            if (string.Equals(broker.Trim(), "ANGELONE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(broker.Trim(), "ANGEL", StringComparison.OrdinalIgnoreCase))
+            {
+                return "ANGELONE";
+            }
+            throw new ArgumentException($"Unsupported broker '{broker}'. Supported brokers are DHAN and ANGELONE.");
+        }
 
         private async Task<List<SaveDhanAccountRequest>> ReadPlaintextAccountsFileAsync(CancellationToken cancellationToken)
         {

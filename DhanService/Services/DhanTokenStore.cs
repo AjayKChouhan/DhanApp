@@ -11,6 +11,7 @@ namespace DhanService.Services
     public interface IDhanTokenStore
     {
         Task<Token?> GetAsync(string dhanClientId, CancellationToken cancellationToken = default);
+        Task<Token?> GetAsync(string dhanClientId, string broker, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<Token>> GetAllAsync(CancellationToken cancellationToken = default);
         Task SaveAsync(Token token, CancellationToken cancellationToken = default);
     }
@@ -42,9 +43,15 @@ namespace DhanService.Services
         }
 
         public async Task<Token?> GetAsync(string dhanClientId, CancellationToken cancellationToken = default)
+            => await GetAsync(dhanClientId, "DHAN", cancellationToken);
+
+        public async Task<Token?> GetAsync(
+            string dhanClientId, string broker, CancellationToken cancellationToken = default)
         {
             var all = await GetAllAsync(cancellationToken);
-            return all.FirstOrDefault(t => t.DhanClientId == dhanClientId);
+            return all.FirstOrDefault(t =>
+                string.Equals(t.DhanClientId, dhanClientId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(t.Broker, broker, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<IReadOnlyList<Token>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -67,7 +74,7 @@ namespace DhanService.Services
             try
             {
                 await EnsureLoadedAsync(cancellationToken);
-                _cache![token.DhanClientId] = token;
+                _cache![GetTokenKey(token.DhanClientId, token.Broker)] = token;
                 await PersistAsync(cancellationToken);
             }
             finally
@@ -102,7 +109,7 @@ namespace DhanService.Services
                 var tokens = JsonSerializer.Deserialize<List<Token>>(json) ?? new List<Token>();
                 foreach (var token in tokens)
                 {
-                    _cache[token.DhanClientId] = token;
+                    _cache[GetTokenKey(token.DhanClientId, token.Broker)] = token;
                 }
             }
             catch (Exception ex)
@@ -117,5 +124,7 @@ namespace DhanService.Services
             var protectedJson = _protector.Protect(json);
             await File.WriteAllTextAsync(_filePath, protectedJson, cancellationToken);
         }
+
+        private static string GetTokenKey(string clientId, string broker) => $"{broker}:{clientId}";
     }
 }

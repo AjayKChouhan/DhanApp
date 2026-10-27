@@ -2,6 +2,7 @@
 // Dhan's raw JSON payloads as-is (fields vary by endpoint).
 export interface DhanAccountStatus {
   accountName: string;
+  broker?: 'DHAN' | 'ANGELONE' | string;
   dhanClientId: string;
   isConnected: boolean;
   tokenExpiryUtc?: string | null;
@@ -9,13 +10,18 @@ export interface DhanAccountStatus {
 
 export interface DhanAccountInput {
   accountName: string;
+  broker: 'DHAN' | 'ANGELONE';
   dhanClientId: string;
+  clientCode?: string;
   pin: string;
   totpSecret: string;
+  password?: string;
+  apiKey?: string;
 }
 
 export interface DhanLoginResult {
   accountName: string;
+  broker?: 'DHAN' | 'ANGELONE' | string;
   dhanClientId: string;
   success: boolean;
   expiryUtc?: string | null;

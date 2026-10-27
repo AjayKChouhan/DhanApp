@@ -8,8 +8,10 @@ namespace DhanService.Models
     public class Token
     {
         public string AccountName { get; set; } = string.Empty;
+        public string Broker { get; set; } = "DHAN";
         public string DhanClientId { get; set; } = string.Empty;
         public string AccessToken { get; set; } = string.Empty;
+        public string FeedToken { get; set; } = string.Empty;
         public DateTime ExpiryTimeUtc { get; set; }
 
         public bool IsExpired => DateTime.UtcNow >= ExpiryTimeUtc;
