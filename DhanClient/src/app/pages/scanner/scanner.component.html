@@ -3,23 +3,60 @@
     <div class="trade-page-title">
       <span class="trade-eyebrow">MARKET ANALYSIS</span>
       <h1>Futures Scanner</h1>
-      <p class="muted">Rank current-expiry NSE stock futures using live Dhan candles and technical signals. Analysis only; no orders are placed.</p>
-      @if (generatedAt) {
-        <span class="scanner-updated">Updated {{ generatedAt | date:'medium' }}</span>
+      <p class="muted">Scan current-expiry NSE stock futures for 2% moves between consecutive closed 5-minute candles. Analysis only; no orders are placed.</p>
+      @if (breakoutLastScannedAt) {
+        <span class="scanner-updated">Updated {{ breakoutLastScannedAt | date:'medium' }}</span>
       }
     </div>
-    <button type="button" [disabled]="loading" (click)="refresh()">
-      {{ loading ? 'Scanning...' : 'Refresh scan' }}
+    <button type="button" [disabled]="breakoutLoading" (click)="refreshBreakouts()">
+      {{ breakoutLoading ? 'Refreshing...' : 'Refresh scan' }}
     </button>
   </header>
 
-  @if (errorMessage) {
-    <div class="status-line error scanner-message">{{ errorMessage }}</div>
-  } @else if (warning) {
-    <div class="status-line scanner-warning">{{ warning }}</div>
-  }
+  <section class="scanner-section" aria-labelledby="breakoutScannerHeading">
+    <div class="scanner-section-heading">
+      <div>
+        <span class="scanner-side-label">5-MINUTE PRICE-MOVE SCANNER</span>
+        <h2 id="breakoutScannerHeading">NSE F&amp;O stock breakouts</h2>
+        <p class="muted">Latest closed 5-minute candle versus the immediately previous closed candle's close. Shows moves of at least 2% up or down. Analysis only; no orders are placed.</p>
+        @if (breakoutLastScannedAt) {
+          <span class="scanner-updated">Background scan {{ breakoutLastScannedAt | date:'medium' }}</span>
+        }
+      </div>
+    </div>
+    @if (breakoutError) {
+      <div class="status-line error scanner-message">{{ breakoutError }}</div>
+    } @else if (breakoutWarning) {
+      <div class="status-line scanner-warning">{{ breakoutWarning }}</div>
+    }
+    <div class="card scanner-results">
+      @if (breakoutSignals.length === 0) {
+        <div class="scanner-empty">No qualifying closed 5-minute price moves have been found yet.</div>
+      } @else {
+        <div class="scanner-table-wrap">
+          <table class="scanner-table">
+            <thead><tr>
+              <th>Stock</th><th>Direction</th><th>Price change</th><th>Latest close</th><th>Previous close</th><th>Candle time</th>
+            </tr></thead>
+            <tbody>
+              @for (signal of breakoutSignals; track signal.securityId + signal.candleTime + signal.direction) {
+                <tr>
+                  <td><strong>{{ signal.underlyingSymbol }}</strong><small>{{ signal.tradingSymbol }}</small></td>
+                  <td><span class="badge" [class.buy]="signal.direction === 'LONG'" [class.sell]="signal.direction === 'SHORT'">{{ signal.direction }}</span></td>
+                  <td>{{ signal.priceChangePercent | number:'1.2-2' }}%</td>
+                  <td>{{ signal.close | number:'1.2-2' }}</td>
+                  <td>{{ signal.previousClose | number:'1.2-2' }}</td>
+                  <td>{{ signal.candleTime | date:'medium' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  </section>
 
-  @if (loading && instruments.length === 0) {
+  <!-- @if (loading && instruments.length === 0) {
     <section class="card scanner-loading">Loading current-expiry stock futures and calculating indicators...</section>
   } @else if (!errorMessage && instruments.length === 0) {
     <section class="card scanner-empty">No stock-futures market data is available. Confirm a Dhan account is configured, logged in, and subscribed to market data, then refresh.</section>
@@ -138,5 +175,5 @@
       </div>
     </section>
     <p class="scanner-disclaimer">Score is a weighted technical-confluence ranking, not a probability of profit. Categories use 25% trend/relative strength (15% NIFTY trend, 10% relative performance), 25% VWAP/EMA, 20% volume, 20% entry setup and 10% risk/reward; enabled score weights are normalized to 100. Liquidity (at least ₹5 Cr average daily turnover) and valid 1:2 risk/reward are mandatory. RSI is a soft tie-breaker only. Levels use 5-minute Dhan candles and ATR(14) and are analysis only.</p>
-  }
+  } -->
 </section>

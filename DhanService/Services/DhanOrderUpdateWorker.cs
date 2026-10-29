@@ -94,7 +94,7 @@ namespace DhanService.Services
                         .Prepend(requiredMasterClientId)
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .Select(clientId => RunAccountSocketAsync(clientId, accounts, session.Token))
-                        .Append(PollAngelChildStatusesAsync(settings.Children, accounts, session.Token))
+                        .Append(PollNonDhanChildStatusesAsync(settings.Children, accounts, session.Token))
                         .ToArray();
                     var connectionEnded = Task.WhenAny(connectionTasks);
                     var configurationChanged = _store.WaitForSettingsChangeAsync(session.Token).AsTask();
@@ -129,30 +129,32 @@ namespace DhanService.Services
             }
         }
 
-        private async Task PollAngelChildStatusesAsync(
+        private async Task PollNonDhanChildStatusesAsync(
             IReadOnlyList<DhanService.Models.CopyTradingChildSetting> children,
             IReadOnlyList<DhanService.Models.DhanAccountCredential> accounts,
             CancellationToken cancellationToken)
         {
-            var angelChildIds = children
+            var polledChildren = children
                 .Where(child => child.Enabled)
                 .Select(child => accounts.FirstOrDefault(account =>
                     string.Equals(account.DhanClientId, child.DhanClientId, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase)))
+                    (string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase))))
                 .Where(account => account is not null)
-                .Select(account => account!.DhanClientId)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(account => account!)
+                .DistinctBy(account => account.DhanClientId, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                foreach (var clientId in angelChildIds)
+                foreach (var account in polledChildren)
                 {
+                    var clientId = account.DhanClientId;
                     var result = await _orderService.GetOrdersAsync(clientId, cancellationToken);
                     if (!result.Success || result.Orders is not { ValueKind: JsonValueKind.Array } orders)
                     {
-                        _logger.LogWarning("Angel One order status polling failed for account {ClientId}: {Error}",
-                            clientId, result.ErrorMessage);
+                        _logger.LogWarning("{Broker} order status polling failed for account {ClientId}: {Error}",
+                            account.Broker, clientId, result.ErrorMessage);
                         continue;
                     }
 

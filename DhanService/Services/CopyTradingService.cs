@@ -491,7 +491,9 @@ namespace DhanService.Services
                             TransactionType = order.TransactionType,
                             OrderType = order.OrderType,
                             Price = order.OrderType == "MARKET" || order.OrderType == "STOP_LOSS_MARKET" ? null : order.Price,
-                            TriggerPrice = order.TriggerPrice > 0 ? order.TriggerPrice : null
+                            TriggerPrice = order.TriggerPrice > 0 ? order.TriggerPrice : null,
+                            AfterMarketOrder = order.AfterMarketOrder,
+                            DisclosedQuantity = order.DisclosedQuantity
                         };
 
                         var results = await _orderService.PlaceOrderForAccountsAsync(request, cancellationToken);
@@ -552,6 +554,16 @@ namespace DhanService.Services
                 {
                     return $"Angel One futures does not support the master product type '{order.ProductType}'.";
                 }
+            }
+            if (string.Equals(childBroker, "UPSTOX", StringComparison.OrdinalIgnoreCase) &&
+                order.ProductType is not ("MARGIN" or "INTRADAY"))
+            {
+                return $"Upstox futures does not support the master product type '{order.ProductType}'.";
+            }
+            if (string.Equals(childBroker, "UPSTOX", StringComparison.OrdinalIgnoreCase) &&
+                order.Validity is not ("DAY" or "IOC"))
+            {
+                return $"Upstox futures does not support the master validity '{order.Validity}'.";
             }
             if ((order.OrderType is "LIMIT" or "STOP_LOSS") && order.Price <= 0)
             {

@@ -11,6 +11,7 @@ import {
   DhanSetIpResult,
   CopyTradingDashboard,
   CopyTradingSettings,
+  BreakoutScannerResponse,
   FuturesInstrument,
   MarketScannerResponse,
   OrderResult,
@@ -86,6 +87,12 @@ export class DhanApiService {
     return this.post<DhanLoginResult[]>('/login');
   }
 
+  startUpstoxAuthorization(clientId: string): Promise<{ authorizationUrl: string }> {
+    return this.post<{ authorizationUrl: string }>(
+      `/accounts/${encodeURIComponent(clientId)}/upstox/authorize`
+    );
+  }
+
   getPositions(dhanClientId: string): Promise<any> {
     return this.get(`/accounts/${encodeURIComponent(dhanClientId)}/positions`);
   }
@@ -104,6 +111,10 @@ export class DhanApiService {
 
   getStockFuturesScan(): Promise<MarketScannerResponse> {
     return this.get<MarketScannerResponse>('/scanner/stock-futures');
+  }
+
+  getBreakoutSignals(): Promise<BreakoutScannerResponse> {
+    return this.get<BreakoutScannerResponse>('/scanner/breakouts');
   }
 
   placeOrder(order: PlaceOrderRequest): Promise<OrderResult[]> {

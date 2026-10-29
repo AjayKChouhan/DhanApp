@@ -23,6 +23,8 @@ namespace DhanService.Services
         string UnprotectAngelPassword(DhanAccountCredential account);
         string UnprotectAngelApiKey(DhanAccountCredential account);
         string UnprotectAngelTotpSecret(DhanAccountCredential account);
+        string UnprotectUpstoxApiKey(DhanAccountCredential account);
+        string UnprotectUpstoxApiSecret(DhanAccountCredential account);
     }
 
     /// <summary>
@@ -87,8 +89,10 @@ namespace DhanService.Services
                         ProtectedPin = ProtectIfNotEmpty(a.Pin),
                         ProtectedTotpSecret = ProtectIfNotEmpty(a.TotpSecret),
                         ProtectedAngelPassword = ProtectIfNotEmpty(a.Password),
-                        ProtectedAngelApiKey = ProtectIfNotEmpty(a.ApiKey),
+                        ProtectedAngelApiKey = ProtectIfNotEmpty(NormalizeBroker(a.Broker) == "ANGELONE" ? a.ApiKey : null),
                         ProtectedAngelTotpSecret = ProtectIfNotEmpty(a.TotpSecret),
+                        ProtectedUpstoxApiKey = ProtectIfNotEmpty(NormalizeBroker(a.Broker) == "UPSTOX" ? a.ApiKey : null),
+                        ProtectedUpstoxApiSecret = ProtectIfNotEmpty(NormalizeBroker(a.Broker) == "UPSTOX" ? a.ApiSecret : null),
                     })
                     .ToList();
 
@@ -131,7 +135,10 @@ namespace DhanService.Services
                         !string.IsNullOrWhiteSpace(account.Password) &&
                         !string.IsNullOrWhiteSpace(account.ApiKey) &&
                         !string.IsNullOrWhiteSpace(account.TotpSecret);
-                    if (string.IsNullOrWhiteSpace(accountId) || (!validDhan && !validAngelOne))
+                    var validUpstox = broker == "UPSTOX" &&
+                        !string.IsNullOrWhiteSpace(account.ApiKey) &&
+                        !string.IsNullOrWhiteSpace(account.ApiSecret);
+                    if (string.IsNullOrWhiteSpace(accountId) || (!validDhan && !validAngelOne && !validUpstox))
                     {
                         continue;
                     }
@@ -151,8 +158,10 @@ namespace DhanService.Services
                         ProtectedPin = ProtectIfNotEmpty(account.Pin),
                         ProtectedTotpSecret = ProtectIfNotEmpty(broker == "DHAN" ? account.TotpSecret : null),
                         ProtectedAngelPassword = ProtectIfNotEmpty(account.Password),
-                        ProtectedAngelApiKey = ProtectIfNotEmpty(account.ApiKey),
+                        ProtectedAngelApiKey = ProtectIfNotEmpty(broker == "ANGELONE" ? account.ApiKey : null),
                         ProtectedAngelTotpSecret = ProtectIfNotEmpty(broker == "ANGELONE" ? account.TotpSecret : null),
+                        ProtectedUpstoxApiKey = ProtectIfNotEmpty(broker == "UPSTOX" ? account.ApiKey : null),
+                        ProtectedUpstoxApiSecret = ProtectIfNotEmpty(broker == "UPSTOX" ? account.ApiSecret : null),
                     };
                     seededCount++;
                 }
@@ -182,13 +191,20 @@ namespace DhanService.Services
 
         public string UnprotectAngelTotpSecret(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedAngelTotpSecret);
 
+        public string UnprotectUpstoxApiKey(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedUpstoxApiKey);
+
+        public string UnprotectUpstoxApiSecret(DhanAccountCredential account) => _protector.Unprotect(account.ProtectedUpstoxApiSecret);
+
         private string ProtectIfNotEmpty(string? secret) =>
             string.IsNullOrEmpty(secret) ? string.Empty : _protector.Protect(secret);
 
         private static string GetAccountId(SaveDhanAccountRequest account) =>
-            NormalizeBroker(account.Broker) == "ANGELONE"
-                ? (string.IsNullOrWhiteSpace(account.ClientCode) ? account.DhanClientId : account.ClientCode)
-                : account.DhanClientId;
+            NormalizeBroker(account.Broker) switch
+            {
+                "ANGELONE" or "UPSTOX" =>
+                    string.IsNullOrWhiteSpace(account.ClientCode) ? account.DhanClientId : account.ClientCode,
+                _ => account.DhanClientId
+            };
 
         private static string NormalizeBroker(string? broker)
         {
@@ -202,7 +218,11 @@ namespace DhanService.Services
             {
                 return "ANGELONE";
             }
-            throw new ArgumentException($"Unsupported broker '{broker}'. Supported brokers are DHAN and ANGELONE.");
+            if (string.Equals(broker.Trim(), "UPSTOX", StringComparison.OrdinalIgnoreCase))
+            {
+                return "UPSTOX";
+            }
+            throw new ArgumentException($"Unsupported broker '{broker}'. Supported brokers are DHAN, ANGELONE, and UPSTOX.");
         }
 
         private async Task<List<SaveDhanAccountRequest>> ReadPlaintextAccountsFileAsync(CancellationToken cancellationToken)

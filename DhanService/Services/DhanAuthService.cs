@@ -69,6 +69,28 @@ namespace DhanService.Services
                 {
                     return await LoginAngelOneAccountAsync(account, cancellationToken);
                 }
+                if (string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase))
+                {
+                    var existingUpstoxToken = await _tokenStore.GetAsync(
+                        account.DhanClientId, account.Broker, cancellationToken);
+                    return existingUpstoxToken is not null && !existingUpstoxToken.IsExpired
+                        ? new DhanLoginResultDto
+                        {
+                            AccountName = account.AccountName,
+                            Broker = "UPSTOX",
+                            DhanClientId = account.DhanClientId,
+                            Success = true,
+                            ExpiryUtc = existingUpstoxToken.ExpiryTimeUtc
+                        }
+                        : new DhanLoginResultDto
+                        {
+                            AccountName = account.AccountName,
+                            Broker = "UPSTOX",
+                            DhanClientId = account.DhanClientId,
+                            Success = false,
+                            ErrorMessage = "Upstox access tokens require OAuth. Use Connect Upstox for this account."
+                        };
+                }
 
                 var pin = _accountStore.UnprotectPin(account);
                 var totpSecret = _accountStore.UnprotectTotpSecret(account);
@@ -156,7 +178,10 @@ namespace DhanService.Services
         public async Task<Token?> EnsureValidTokenAsync(DhanAccountCredential account, CancellationToken cancellationToken = default)
         {
             var existing = await _tokenStore.GetAsync(account.DhanClientId, account.Broker, cancellationToken);
-            if (existing is not null && !existing.IsNearExpiry(_options.TokenRefreshThresholdMinutes))
+            if (existing is not null &&
+                !existing.IsExpired &&
+                (string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase) ||
+                 !existing.IsNearExpiry(_options.TokenRefreshThresholdMinutes)))
             {
                 return existing;
             }

@@ -4,3 +4,7 @@
 ### Scan current-expiry NSE stock futures (read-only; requires a saved, logged-in Dhan account)
 GET {{baseUrl}}/scanner/stock-futures
 X-Dhan-Api-Key: {{dhanApiKey}}
+
+### Read recent background 3-minute NSE F&O breakout signals
+GET {{baseUrl}}/scanner/breakouts
+X-Dhan-Api-Key: {{dhanApiKey}}

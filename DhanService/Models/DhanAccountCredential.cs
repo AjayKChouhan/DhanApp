@@ -15,6 +15,8 @@ namespace DhanService.Models
         public string ProtectedAngelPassword { get; set; } = string.Empty;
         public string ProtectedAngelApiKey { get; set; } = string.Empty;
         public string ProtectedAngelTotpSecret { get; set; } = string.Empty;
+        public string ProtectedUpstoxApiKey { get; set; } = string.Empty;
+        public string ProtectedUpstoxApiSecret { get; set; } = string.Empty;
     }
 
     /// <summary>Request payload for a single account, submitted in plaintext from the setup form.</summary>
@@ -28,6 +30,7 @@ namespace DhanService.Models
         public string TotpSecret { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string ApiKey { get; set; } = string.Empty;
+        public string ApiSecret { get; set; } = string.Empty;
     }
 
     /// <summary>Request payload for saving the full list of accounts at once.</summary>

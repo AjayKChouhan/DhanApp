@@ -10,13 +10,14 @@ export interface DhanAccountStatus {
 
 export interface DhanAccountInput {
   accountName: string;
-  broker: 'DHAN' | 'ANGELONE';
+  broker: 'DHAN' | 'ANGELONE' | 'UPSTOX';
   dhanClientId: string;
   clientCode?: string;
   pin: string;
   totpSecret: string;
   password?: string;
   apiKey?: string;
+  apiSecret?: string;
 }
 
 export interface DhanLoginResult {
@@ -64,6 +65,7 @@ export interface PlaceOrderRequest {
 export interface OrderResult {
   accountName: string;
   dhanClientId: string;
+  broker?: string;
   success: boolean;
   orderId?: string | null;
   orderStatus?: string | null;
@@ -226,6 +228,26 @@ export interface MarketScannerResponse {
   failedCount: number;
   warning?: string | null;
   instruments: MarketScannerInstrument[];
+}
+
+export interface BreakoutSignal {
+  securityId: string;
+  tradingSymbol: string;
+  underlyingSymbol: string;
+  direction: 'LONG' | 'SHORT';
+  candleTime: string;
+  priceChangePercent: number;
+  close: number;
+  previousClose: number;
+}
+
+export interface BreakoutScannerResponse {
+  lastScannedAt: string | null;
+  instrumentCount: number;
+  scannedCount: number;
+  failedCount: number;
+  warning?: string | null;
+  signals: BreakoutSignal[];
 }
 
 export interface DhanSetIpResult {

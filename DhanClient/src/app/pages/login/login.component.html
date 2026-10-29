@@ -16,9 +16,24 @@
           <select [(ngModel)]="account.broker">
             <option value="DHAN">Dhan</option>
             <option value="ANGELONE">Angel One</option>
+            <option value="UPSTOX">Upstox</option>
           </select>
         </div>
-        @if (account.broker === 'ANGELONE') {
+        @if (account.broker === 'UPSTOX') {
+          <div class="field">
+            <label>Upstox User ID</label>
+            <input type="text" placeholder="User ID / UCC" [(ngModel)]="account.clientCode" />
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <input type="password" placeholder="Upstox API key" [(ngModel)]="account.apiKey" />
+          </div>
+          <div class="field">
+            <label>API Secret</label>
+            <input type="password" placeholder="Upstox API secret" [(ngModel)]="account.apiSecret" />
+          </div>
+          <button type="button" class="secondary" (click)="connectUpstox(account)">Connect Upstox</button>
+        } @else if (account.broker === 'ANGELONE') {
           <div class="field">
             <label>Angel One Client Code</label>
             <input type="text" placeholder="Client code" [(ngModel)]="account.clientCode" />
@@ -41,10 +56,12 @@
             <input type="password" placeholder="PIN" [(ngModel)]="account.pin" />
           </div>
         }
-        <div class="field">
-          <label>TOTP Secret</label>
-          <input type="text" placeholder="Base32 secret" [(ngModel)]="account.totpSecret" />
-        </div>
+        @if (account.broker !== 'UPSTOX') {
+          <div class="field">
+            <label>TOTP Secret</label>
+            <input type="text" placeholder="Base32 secret" [(ngModel)]="account.totpSecret" />
+          </div>
+        }
         <button type="button" class="secondary" (click)="removeRow($index)">Remove</button>
       </div>
     }
@@ -97,7 +114,7 @@
 
 <section class="card">
   <h2>Login</h2>
-  <p class="muted">Generates (or refreshes) an access token for every saved account, account-name wise.</p>
+  <p class="muted">Generates or refreshes Dhan and Angel One tokens. Upstox accounts connect through the OAuth button above.</p>
   <div class="toolbar">
     <button type="button" [disabled]="loggingIn" (click)="loginAll()">Login All Accounts</button>
   </div>

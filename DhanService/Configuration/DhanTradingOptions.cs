@@ -30,6 +30,20 @@ namespace DhanService.Configuration
         public string AngelOneInstrumentMasterUrl { get; set; } =
             "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json";
 
+        /// <summary>Base URL for Upstox trading endpoints.</summary>
+        public string UpstoxApiBaseUrl { get; set; } = "https://api-hft.upstox.com";
+
+        /// <summary>Upstox BOD instrument master used to resolve equivalent futures contracts.</summary>
+        public string UpstoxInstrumentMasterUrl { get; set; } =
+            "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz";
+
+        /// <summary>
+        /// Registered Upstox OAuth callback URL. It must match the DhanAPI callback endpoint
+        /// and the redirect URI configured for the Upstox developer application.
+        /// </summary>
+        public string UpstoxRedirectUri { get; set; } =
+            "http://localhost:5050/api/dhantrading/upstox/callback";
+
         /// <summary>URL of the Dhan compact instrument master CSV.</summary>
         public string InstrumentMasterUrl { get; set; } = "https://images.dhan.co/api-data/api-scrip-master.csv";
 

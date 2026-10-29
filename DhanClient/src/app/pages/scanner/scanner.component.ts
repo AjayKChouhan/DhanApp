@@ -1,8 +1,8 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DhanApiService } from '../../core/dhan-api.service';
-import { MarketScannerInstrument } from '../../core/models';
+import { BreakoutSignal, MarketScannerInstrument } from '../../core/models';
 
 type ScannerSide = 'LONG' | 'SHORT';
 type FilterKey = 'marketTrend' | 'relativeStrength' | 'vwapEma' | 'volume' | 'entrySetup' | 'riskReward' | 'rsi';
@@ -40,19 +40,31 @@ const createFilters = (): ScannerFilter[] => [
   imports: [DatePipe, DecimalPipe, FormsModule],
   templateUrl: './scanner.component.html'
 })
-export class ScannerComponent implements OnInit {
+export class ScannerComponent implements OnInit, OnDestroy {
   longFilters = createFilters();
   shortFilters = createFilters();
   instruments: MarketScannerInstrument[] = [];
   generatedAt = '';
   warning = '';
   errorMessage = '';
-  loading = false;
+  breakoutLoading = false;
+  breakoutSignals: BreakoutSignal[] = [];
+  breakoutLastScannedAt: string | null = null;
+  breakoutWarning = '';
+  breakoutError = '';
+  private breakoutRefreshTimer?: number;
 
   constructor(private readonly api: DhanApiService) {}
 
   ngOnInit(): void {
-    void this.refresh();
+    void this.refreshBreakouts();
+    this.breakoutRefreshTimer = window.setInterval(() => void this.refreshBreakouts(), 30_000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.breakoutRefreshTimer !== undefined) {
+      window.clearInterval(this.breakoutRefreshTimer);
+    }
   }
 
   get longRows(): RankedInstrument[] {
@@ -63,25 +75,22 @@ export class ScannerComponent implements OnInit {
     return this.rank('SHORT', this.shortFilters);
   }
 
-  async refresh(): Promise<void> {
-    if (this.loading) {
+  async refreshBreakouts(): Promise<void> {
+    if (this.breakoutLoading) {
       return;
     }
 
-    this.loading = true;
-    this.errorMessage = '';
-    this.warning = '';
+    this.breakoutLoading = true;
     try {
-      const result = await this.api.getStockFuturesScan();
-      this.instruments = result.instruments || [];
-      this.generatedAt = result.generatedAt;
-      this.warning = result.warning || '';
+      const result = await this.api.getBreakoutSignals();
+      this.breakoutSignals = result.signals || [];
+      this.breakoutLastScannedAt = result.lastScannedAt;
+      this.breakoutWarning = result.warning || '';
+      this.breakoutError = '';
     } catch (err) {
-      this.instruments = [];
-      this.generatedAt = '';
-      this.errorMessage = `Could not load scanner data: ${(err as Error).message}`;
+      this.breakoutError = `Could not load breakout signals: ${(err as Error).message}`;
     } finally {
-      this.loading = false;
+      this.breakoutLoading = false;
     }
   }
 

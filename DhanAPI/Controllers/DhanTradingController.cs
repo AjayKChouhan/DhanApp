@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.Text.Json;
 using DhanAPI.Filters;
 using DhanService.Models;
 using DhanService.Services;
@@ -27,6 +29,7 @@ namespace DhanAPI.Controllers
         private readonly IDhanMarketQuoteService _marketQuoteService;
         private readonly IDhanMarketScannerService _marketScannerService;
         private readonly ICopyTradingStore _copyTradingStore;
+        private readonly IUpstoxAuthService _upstoxAuthService;
 
         public DhanTradingController(
             ILogger<DhanTradingController> logger,
@@ -38,7 +41,8 @@ namespace DhanAPI.Controllers
             IDhanPositionService positionService,
             IDhanMarketQuoteService marketQuoteService,
             IDhanMarketScannerService marketScannerService,
-            ICopyTradingStore copyTradingStore)
+            ICopyTradingStore copyTradingStore,
+            IUpstoxAuthService upstoxAuthService)
         {
             _logger = logger;
             _accountStore = accountStore;
@@ -50,6 +54,7 @@ namespace DhanAPI.Controllers
             _marketQuoteService = marketQuoteService;
             _marketScannerService = marketScannerService;
             _copyTradingStore = copyTradingStore;
+            _upstoxAuthService = upstoxAuthService;
         }
 
         /// <summary>Saves (replaces) the full list of Dhan account credentials.</summary>
@@ -72,17 +77,23 @@ namespace DhanAPI.Controllers
                 if (!string.IsNullOrWhiteSpace(account.Broker) &&
                     !string.Equals(account.Broker, "DHAN", StringComparison.OrdinalIgnoreCase) &&
                     !string.Equals(account.Broker, "ANGEL", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest("broker must be DHAN or ANGELONE.");
+                    return BadRequest("broker must be DHAN, ANGELONE, or UPSTOX.");
                 }
                 var isAngelOne = string.Equals(account.Broker, "ANGELONE", StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(account.Broker, "ANGEL", StringComparison.OrdinalIgnoreCase);
+                var isUpstox = string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase);
                 var hasCredentials = isAngelOne
                     ? !string.IsNullOrWhiteSpace(account.ClientCode) &&
                       !string.IsNullOrWhiteSpace(account.Password) &&
                       !string.IsNullOrWhiteSpace(account.ApiKey) &&
                       !string.IsNullOrWhiteSpace(account.TotpSecret)
+                    : isUpstox
+                    ? !string.IsNullOrWhiteSpace(account.ClientCode) &&
+                      !string.IsNullOrWhiteSpace(account.ApiKey) &&
+                      !string.IsNullOrWhiteSpace(account.ApiSecret)
                     : !string.IsNullOrWhiteSpace(account.DhanClientId) &&
                       !string.IsNullOrWhiteSpace(account.Pin) &&
                       !string.IsNullOrWhiteSpace(account.TotpSecret);
@@ -90,9 +101,11 @@ namespace DhanAPI.Controllers
                 {
                     return BadRequest(isAngelOne
                         ? "clientCode, password, apiKey, and totpSecret are required for every Angel One account."
+                        : isUpstox
+                        ? "clientCode, apiKey, and apiSecret are required for every Upstox account."
                         : "dhanClientId, pin, and totpSecret are required for every Dhan account.");
                 }
-                var accountId = isAngelOne ? account.ClientCode.Trim() : account.DhanClientId.Trim();
+                var accountId = isAngelOne || isUpstox ? account.ClientCode.Trim() : account.DhanClientId.Trim();
                 if (!accountIds.Add(accountId))
                 {
                     return BadRequest("Each broker account ID can only be configured once.");
@@ -158,6 +171,50 @@ namespace DhanAPI.Controllers
 
             var results = await _authService.LoginAllAsync(cancellationToken);
             return Ok(results.ToList());
+        }
+
+        [HttpPost("accounts/{clientId}/upstox/authorize")]
+        public async Task<IActionResult> AuthorizeUpstoxAccount(
+            string clientId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var authorizationUrl = await _upstoxAuthService.CreateAuthorizationUrlAsync(clientId, cancellationToken);
+                return Ok(new { authorizationUrl });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpGet("upstox/callback")]
+        public async Task<IActionResult> UpstoxCallback(
+            [FromQuery] string? code,
+            [FromQuery] string? state,
+            [FromQuery] string? error,
+            CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                return Content("Upstox authorization was not completed. Return to DhanAI and start a new connection.",
+                    "text/plain");
+            }
+
+            try
+            {
+                var result = await _upstoxAuthService.CompleteAuthorizationAsync(
+                    code ?? string.Empty, state ?? string.Empty, cancellationToken);
+                return Content(
+                    $"Upstox connected for {result.AccountName}. You can close this tab and return to DhanAI.",
+                    "text/plain");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or HttpRequestException or JsonException)
+            {
+                _logger.LogWarning(ex, "Upstox OAuth callback could not be completed.");
+                return BadRequest("Upstox connection failed. Return to DhanAI, check the account and redirect URI, and try again.");
+            }
         }
 
         /// <summary>

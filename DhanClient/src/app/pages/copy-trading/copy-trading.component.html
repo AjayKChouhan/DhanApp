@@ -2,7 +2,7 @@
   <div>
     <span class="trade-eyebrow">AUTOMATION</span>
     <h1>Copy Trading</h1>
-    <p class="muted">Copy supported futures orders from one Dhan master to Dhan and Angel One child accounts.</p>
+    <p class="muted">Copy supported futures orders from one Dhan master to Dhan, Angel One, and Upstox child accounts.</p>
   </div>
   <div class="copy-listener-indicator" [class.connected]="listenerConnected">
     <span class="trade-status-dot"></span>
@@ -27,7 +27,7 @@
   @if (loading && accounts.length === 0) {
     <div class="empty-state">Loading saved accounts...</div>
   } @else if (!canConfigure) {
-    <div class="empty-state">Save at least one Dhan master and one other account on the Login page. Other Dhan and Angel One accounts can both be children.</div>
+    <div class="empty-state">Save at least one Dhan master and one other account on the Login page. Other Dhan, Angel One, and Upstox accounts can be children.</div>
   } @else {
     <div class="copy-settings-layout">
       <div class="copy-master-panel">
@@ -114,7 +114,7 @@
   <p>
     Dhan's <a href="https://dhanhq.co/docs/v2/order-update/" target="_blank" rel="noopener noreferrer">Live Order Update WebSocket documentation</a>
     provides the master order stream. Orders are routed to each enabled child using that account's broker integration.
-    Angel One children require an unambiguous matching futures contract by underlying and expiry. Supported pending-order
+    Angel One and Upstox children require an unambiguous matching futures contract by underlying and expiry. Supported pending-order
     changes and cancellations are sent through the child broker's API. Bracket/cover, after-market, disclosed-quantity,
     unsupported product/validity, and ambiguous/missing contract mappings are rejected rather than silently altered.
   </p>

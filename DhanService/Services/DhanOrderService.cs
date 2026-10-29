@@ -45,6 +45,7 @@ namespace DhanService.Services
         private readonly IDhanAccountStore _accountStore;
         private readonly IDhanAuthService _authService;
         private readonly IAngelOneInstrumentService _angelInstrumentService;
+        private readonly IUpstoxInstrumentService _upstoxInstrumentService;
         private readonly DhanTradingOptions _options;
         private readonly ILogger<DhanOrderService> _logger;
 
@@ -53,6 +54,7 @@ namespace DhanService.Services
             IDhanAccountStore accountStore,
             IDhanAuthService authService,
             IAngelOneInstrumentService angelInstrumentService,
+            IUpstoxInstrumentService upstoxInstrumentService,
             IOptions<DhanTradingOptions> options,
             ILogger<DhanOrderService> logger)
         {
@@ -60,6 +62,7 @@ namespace DhanService.Services
             _accountStore = accountStore;
             _authService = authService;
             _angelInstrumentService = angelInstrumentService;
+            _upstoxInstrumentService = upstoxInstrumentService;
             _options = options.Value;
             _logger = logger;
         }
@@ -153,6 +156,10 @@ namespace DhanService.Services
                 {
                     return await ModifyAngelOneOrderAsync(account, request, cancellationToken);
                 }
+                if (IsUpstox(account))
+                {
+                    return await ModifyUpstoxOrderAsync(account, request, cancellationToken);
+                }
 
                 var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
                 if (token is null)
@@ -222,6 +229,10 @@ namespace DhanService.Services
                 {
                     return await CancelAngelOneOrderAsync(account, orderId, cancellationToken);
                 }
+                if (IsUpstox(account))
+                {
+                    return await CancelUpstoxOrderAsync(account, orderId, cancellationToken);
+                }
 
                 var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
                 if (token is null)
@@ -282,6 +293,10 @@ namespace DhanService.Services
                 if (IsAngelOne(account))
                 {
                     return await GetAngelOneOrdersAsync(account, cancellationToken);
+                }
+                if (IsUpstox(account))
+                {
+                    return await GetUpstoxOrdersAsync(account, cancellationToken);
                 }
 
                 var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
@@ -365,6 +380,11 @@ namespace DhanService.Services
                 if (IsAngelOne(account))
                 {
                     return await PlaceAngelOneOrderAsync(
+                        account, request, quantity, transactionType, orderType, cancellationToken);
+                }
+                if (IsUpstox(account))
+                {
+                    return await PlaceUpstoxOrderAsync(
                         account, request, quantity, transactionType, orderType, cancellationToken);
                 }
 
@@ -718,6 +738,382 @@ namespace DhanService.Services
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             return CreateAngelOrderResult(account, orderId, response, body, "CANCELLED");
         }
+
+        private async Task<DhanOrderResultDto> PlaceUpstoxOrderAsync(
+            DhanAccountCredential account,
+            PlaceDhanOrderRequest request,
+            int quantity,
+            string transactionType,
+            string orderType,
+            CancellationToken cancellationToken)
+        {
+            if (!string.Equals(request.Validity, "DAY", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(request.Validity, "IOC", StringComparison.OrdinalIgnoreCase))
+            {
+                return UpstoxFailure(account, "Upstox supports DAY and IOC validity only.");
+            }
+            if (request.AfterMarketOrder || request.DisclosedQuantity > 0)
+            {
+                return UpstoxFailure(account, "Upstox futures copying does not support after-market or disclosed-quantity orders.");
+            }
+
+            var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+            if (token is null)
+            {
+                return UpstoxFailure(account, "Could not obtain a valid Upstox access token. Connect the account using OAuth.");
+            }
+
+            var instrument = await _upstoxInstrumentService.ResolveFutureAsync(
+                request.SecurityId, request.ExchangeSegment, cancellationToken);
+            var upstoxQuantity = ConvertQuantityToUpstoxUnits(quantity, instrument);
+            var tag = CreateAngelOrderTag(request.CorrelationId);
+            if (tag is not null)
+            {
+                var existingOrders = await GetUpstoxOrdersAsync(account, cancellationToken);
+                if (!existingOrders.Success)
+                {
+                    return UpstoxFailure(
+                        account,
+                        "Could not check the Upstox order book before submission; retry after order status is available.");
+                }
+
+                var existingOrder = existingOrders.Orders is { ValueKind: JsonValueKind.Array } orders
+                    ? orders.EnumerateArray().FirstOrDefault(order =>
+                        string.Equals(ReadJsonText(order, "correlationId"), tag, StringComparison.OrdinalIgnoreCase))
+                    : default;
+                if (existingOrder.ValueKind == JsonValueKind.Object)
+                {
+                    return new DhanOrderResultDto
+                    {
+                        AccountName = account.AccountName,
+                        DhanClientId = account.DhanClientId,
+                        Broker = "UPSTOX",
+                        Success = true,
+                        OrderId = ReadJsonText(existingOrder, "orderId"),
+                        OrderStatus = ReadJsonText(existingOrder, "orderStatus"),
+                        BrokerTradingSymbol = instrument.TradingSymbol,
+                        BrokerSecurityId = instrument.InstrumentKey,
+                        BrokerQuantity = ReadJsonInteger(existingOrder, "quantity")
+                    };
+                }
+            }
+
+            var payload = new Dictionary<string, object?>
+            {
+                ["quantity"] = upstoxQuantity,
+                ["product"] = MapUpstoxProductType(request.ProductType),
+                ["validity"] = request.Validity.ToUpperInvariant(),
+                ["price"] = IsPricedOrder(orderType) ? request.Price ?? 0 : 0,
+                ["instrument_token"] = instrument.InstrumentKey,
+                ["order_type"] = MapUpstoxOrderType(orderType),
+                ["transaction_type"] = transactionType,
+                ["disclosed_quantity"] = 0,
+                ["trigger_price"] = request.TriggerPrice ?? 0,
+                ["is_amo"] = false
+            };
+            if (tag is not null)
+            {
+                payload["tag"] = tag;
+            }
+
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Post, $"{_options.UpstoxApiBaseUrl.TrimEnd('/')}/v2/order/place")
+            {
+                Content = JsonContent.Create(payload)
+            };
+            AddUpstoxHeaders(httpRequest, token.AccessToken);
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var result = CreateUpstoxOrderResult(account, null, response, body);
+            if (result.Success)
+            {
+                result.BrokerTradingSymbol = instrument.TradingSymbol;
+                result.BrokerSecurityId = instrument.InstrumentKey;
+                result.BrokerQuantity = upstoxQuantity;
+            }
+            return result;
+        }
+
+        private async Task<DhanOrderResultDto> ModifyUpstoxOrderAsync(
+            DhanAccountCredential account,
+            ModifyDhanOrderRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (!string.Equals(request.Validity, "DAY", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(request.Validity, "IOC", StringComparison.OrdinalIgnoreCase))
+            {
+                return UpstoxFailure(account, "Upstox supports DAY and IOC validity only.");
+            }
+
+            var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+            if (token is null)
+            {
+                return UpstoxFailure(account, "Could not obtain a valid Upstox access token. Connect the account using OAuth.");
+            }
+
+            var instrument = await _upstoxInstrumentService.ResolveFutureAsync(
+                request.MasterSecurityId, request.ExchangeSegment, cancellationToken);
+            var upstoxQuantity = ConvertQuantityToUpstoxUnits(request.Quantity, instrument);
+            var payload = new
+            {
+                order_id = request.OrderId,
+                quantity = upstoxQuantity,
+                validity = request.Validity.ToUpperInvariant(),
+                price = IsPricedOrder(request.OrderType) ? request.Price : 0,
+                order_type = MapUpstoxOrderType(request.OrderType),
+                disclosed_quantity = 0,
+                trigger_price = request.TriggerPrice > 0 ? request.TriggerPrice : 0
+            };
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Put, $"{_options.UpstoxApiBaseUrl.TrimEnd('/')}/v2/order/modify")
+            {
+                Content = JsonContent.Create(payload)
+            };
+            AddUpstoxHeaders(httpRequest, token.AccessToken);
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var result = CreateUpstoxOrderResult(account, request.OrderId, response, body);
+            result.BrokerTradingSymbol = instrument.TradingSymbol;
+            result.BrokerSecurityId = instrument.InstrumentKey;
+            result.BrokerQuantity = upstoxQuantity;
+            return result;
+        }
+
+        private async Task<DhanOrderResultDto> CancelUpstoxOrderAsync(
+            DhanAccountCredential account, string orderId, CancellationToken cancellationToken)
+        {
+            var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+            if (token is null)
+            {
+                return UpstoxFailure(account, "Could not obtain a valid Upstox access token. Connect the account using OAuth.");
+            }
+
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"{_options.UpstoxApiBaseUrl.TrimEnd('/')}/v2/order/cancel?order_id={Uri.EscapeDataString(orderId)}");
+            AddUpstoxHeaders(httpRequest, token.AccessToken);
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return CreateUpstoxOrderResult(account, orderId, response, body, "CANCELLED");
+        }
+
+        private async Task<DhanOrdersResultDto> GetUpstoxOrdersAsync(
+            DhanAccountCredential account, CancellationToken cancellationToken)
+        {
+            var token = await _authService.EnsureValidTokenAsync(account, cancellationToken);
+            if (token is null)
+            {
+                return new DhanOrdersResultDto
+                {
+                    DhanClientId = account.DhanClientId,
+                    Success = false,
+                    ErrorMessage = "Could not obtain a valid Upstox access token. Connect the account using OAuth."
+                };
+            }
+
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get, $"{_options.UpstoxApiBaseUrl.TrimEnd('/')}/v2/order/retrieve-all");
+            AddUpstoxHeaders(request, token.AccessToken);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new DhanOrdersResultDto
+                {
+                    DhanClientId = account.DhanClientId,
+                    Success = false,
+                    ErrorMessage = $"{(int)response.StatusCode}: {ExtractUpstoxMessage(body)}"
+                };
+            }
+
+            using var document = JsonDocument.Parse(body);
+            var data = document.RootElement.TryGetProperty("data", out var responseData)
+                ? responseData
+                : default;
+            if (!string.Equals(ReadJsonText(document.RootElement, "status"), "success", StringComparison.OrdinalIgnoreCase) ||
+                data.ValueKind != JsonValueKind.Array)
+            {
+                return new DhanOrdersResultDto
+                {
+                    DhanClientId = account.DhanClientId,
+                    Success = false,
+                    ErrorMessage = ExtractUpstoxMessage(body)
+                };
+            }
+
+            var normalizedOrders = data.EnumerateArray().Select(order => MapUpstoxOrderToDhanShape(order)).ToList();
+            using var normalizedDocument = JsonDocument.Parse(JsonSerializer.Serialize(normalizedOrders));
+            return new DhanOrdersResultDto
+            {
+                DhanClientId = account.DhanClientId,
+                Success = true,
+                Orders = normalizedDocument.RootElement.Clone()
+            };
+        }
+
+        private static void AddUpstoxHeaders(HttpRequestMessage request, string accessToken)
+        {
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.TryAddWithoutValidation("Api-Version", "2.0");
+        }
+
+        private static DhanOrderResultDto CreateUpstoxOrderResult(
+            DhanAccountCredential account,
+            string? orderId,
+            HttpResponseMessage response,
+            string body,
+            string successStatus = "TRANSIT")
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return UpstoxFailure(account, $"{(int)response.StatusCode}: {ExtractUpstoxMessage(body)}");
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (!string.Equals(ReadJsonText(document.RootElement, "status"), "success", StringComparison.OrdinalIgnoreCase))
+                {
+                    return UpstoxFailure(account, ExtractUpstoxMessage(body));
+                }
+
+                var returnedOrderId = ReadJsonText(document.RootElement, "data", "order_id") ?? orderId;
+                if (string.IsNullOrWhiteSpace(returnedOrderId))
+                {
+                    return UpstoxFailure(account, "Upstox accepted the request without returning an order ID.");
+                }
+
+                return new DhanOrderResultDto
+                {
+                    AccountName = account.AccountName,
+                    DhanClientId = account.DhanClientId,
+                    Broker = "UPSTOX",
+                    Success = true,
+                    OrderId = returnedOrderId,
+                    OrderStatus = successStatus
+                };
+            }
+            catch (JsonException)
+            {
+                return UpstoxFailure(account, "Upstox returned an invalid order response.");
+            }
+        }
+
+        private static object MapUpstoxOrderToDhanShape(JsonElement order)
+        {
+            var status = (ReadJsonText(order, "status") ?? string.Empty).ToUpperInvariant();
+            return new
+            {
+                orderId = ReadJsonText(order, "order_id") ?? string.Empty,
+                orderStatus = status switch
+                {
+                    "COMPLETE" or "COMPLETED" => "TRADED",
+                    "OPEN" or "PENDING" or "TRIGGER PENDING" => "PENDING",
+                    "PARTIALLY FILLED" or "PARTIAL" => "PART_TRADED",
+                    "CANCELLED" or "CANCELED" => "CANCELLED",
+                    "REJECTED" => "REJECTED",
+                    _ => status
+                },
+                transactionType = ReadJsonText(order, "transaction_type") ?? string.Empty,
+                exchangeSegment = ReadJsonText(order, "instrument_token")?.Split('|').FirstOrDefault() switch
+                {
+                    "NSE_FO" => "NSE_FNO",
+                    "BSE_FO" => "BSE_FNO",
+                    "MCX_FO" => "MCX_COMM",
+                    var segment => segment ?? string.Empty
+                },
+                productType = ReadJsonText(order, "product") switch
+                {
+                    "D" => "MARGIN",
+                    "I" => "INTRADAY",
+                    var product => product ?? string.Empty
+                },
+                tradingSymbol = ReadJsonText(order, "trading_symbol") ?? string.Empty,
+                securityId = ReadJsonText(order, "instrument_token") ?? string.Empty,
+                quantity = ReadJsonInteger(order, "quantity"),
+                price = ReadJsonDecimal(order, "price"),
+                orderType = ReadJsonText(order, "order_type") switch
+                {
+                    "SL" => "STOP_LOSS",
+                    "SL-M" => "STOP_LOSS_MARKET",
+                    var type => type ?? string.Empty
+                },
+                validity = ReadJsonText(order, "validity") ?? string.Empty,
+                triggerPrice = ReadJsonDecimal(order, "trigger_price"),
+                correlationId = ReadJsonText(order, "tag") ?? string.Empty,
+                reasonDescription = ReadJsonText(order, "status_message") ?? string.Empty
+            };
+        }
+
+        private static string MapUpstoxOrderType(string orderType) =>
+            orderType.ToUpperInvariant() switch
+            {
+                "MARKET" => "MARKET",
+                "LIMIT" => "LIMIT",
+                "STOP_LOSS" => "SL",
+                "STOP_LOSS_MARKET" => "SL-M",
+                _ => throw new ArgumentException($"Upstox does not support order type '{orderType}'.")
+            };
+
+        private static string MapUpstoxProductType(string productType) =>
+            productType.ToUpperInvariant() switch
+            {
+                "MARGIN" => "D",
+                "INTRADAY" => "I",
+                _ => throw new ArgumentException($"Upstox futures does not support product type '{productType}'.")
+            };
+
+        private static int ConvertQuantityToUpstoxUnits(int dhanQuantity, UpstoxInstrument instrument)
+        {
+            if (dhanQuantity <= 0 || instrument.DhanLotSize <= 0 || instrument.LotSize <= 0)
+            {
+                throw new InvalidOperationException("The master and child futures lot sizes must be positive.");
+            }
+            if (dhanQuantity % instrument.DhanLotSize != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Master order quantity {dhanQuantity} is not a whole number of Dhan lots ({instrument.DhanLotSize}).");
+            }
+
+            return checked((dhanQuantity / instrument.DhanLotSize) * instrument.LotSize);
+        }
+
+        private static string ExtractUpstoxMessage(string body)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                var root = document.RootElement;
+                if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array)
+                {
+                    var firstError = errors.EnumerateArray().FirstOrDefault();
+                    var message = ReadJsonText(firstError, "message");
+                    if (!string.IsNullOrWhiteSpace(message))
+                    {
+                        return message;
+                    }
+                }
+                return ReadJsonText(root, "message") ?? "Upstox returned an unsuccessful response.";
+            }
+            catch (JsonException)
+            {
+                return "Upstox returned an invalid response.";
+            }
+        }
+
+        private static bool IsUpstox(DhanAccountCredential account) =>
+            string.Equals(account.Broker, "UPSTOX", StringComparison.OrdinalIgnoreCase);
+
+        private static DhanOrderResultDto UpstoxFailure(DhanAccountCredential account, string error) => new()
+        {
+            AccountName = account.AccountName,
+            DhanClientId = account.DhanClientId,
+            Broker = "UPSTOX",
+            Success = false,
+            ErrorMessage = error
+        };
 
         private async Task<DhanOrdersResultDto> GetAngelOneOrdersAsync(
             DhanAccountCredential account, CancellationToken cancellationToken)

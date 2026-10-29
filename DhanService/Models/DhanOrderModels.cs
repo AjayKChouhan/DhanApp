@@ -24,6 +24,8 @@ namespace DhanService.Models
         /// <summary>Limit price. Required (and must be greater than zero) when OrderType is "LIMIT".</summary>
         public decimal? Price { get; set; }
         public decimal? TriggerPrice { get; set; }
+        public bool AfterMarketOrder { get; set; }
+        public int DisclosedQuantity { get; set; }
     }
 
     /// <summary>Per-account result of a fanned-out order placement.</summary>

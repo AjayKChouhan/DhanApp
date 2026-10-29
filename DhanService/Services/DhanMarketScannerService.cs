@@ -225,13 +225,22 @@ namespace DhanService.Services
                     }
 
                     using var document = JsonDocument.Parse(body);
-                    var bars = ParseCandles(document.RootElement);
+                    var bars = ParseCandles(document.RootElement, out var rejectedCount);
+                    if (rejectedCount > 0)
+                    {
+                        _logger.LogWarning(
+                            "Skipped {RejectedCount} malformed or incomplete candle rows returned for {Symbol}",
+                            rejectedCount, instrument.TradingSymbol);
+                    }
                     if (bars.Count > 0)
                     {
                         return bars;
                     }
 
-                    lastError = new InvalidOperationException("Dhan returned no intraday candles.");
+                    lastError = new InvalidOperationException(
+                        rejectedCount > 0
+                            ? $"Dhan returned no usable intraday candles; {rejectedCount} malformed or incomplete rows were skipped."
+                            : "Dhan returned no intraday candles.");
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -297,24 +306,16 @@ namespace DhanService.Services
             return null;
         }
 
-        private static List<Candle> ParseCandles(JsonElement root)
+        private static List<Candle> ParseCandles(JsonElement root, out int rejectedCount)
         {
-            var opens = ReadDecimalArray(root, "open");
-            var highs = ReadDecimalArray(root, "high");
-            var lows = ReadDecimalArray(root, "low");
-            var closes = ReadDecimalArray(root, "close");
-            var volumes = ReadDecimalArray(root, "volume");
-            var timestamps = ReadLongArray(root, "timestamp");
-            var count = new[] { opens.Count, highs.Count, lows.Count, closes.Count, volumes.Count, timestamps.Count }.Min();
-
-            return Enumerable.Range(0, count)
-                .Select(index => new Candle(
-                    DateTimeOffset.FromUnixTimeSeconds(timestamps[index]).ToOffset(IndiaOffset),
-                    opens[index],
-                    highs[index],
-                    lows[index],
-                    closes[index],
-                    volumes[index]))
+            return DhanCandleDataParser.Parse(root, out rejectedCount)
+                .Select(candle => new Candle(
+                    DateTimeOffset.FromUnixTimeSeconds(candle.Timestamp).ToOffset(IndiaOffset),
+                    candle.Open,
+                    candle.High,
+                    candle.Low,
+                    candle.Close,
+                    candle.Volume))
                 .OrderBy(candle => candle.Timestamp)
                 .ToList();
         }
@@ -555,32 +556,6 @@ namespace DhanService.Services
             }
 
             return trueRanges.TakeLast(period).Average();
-        }
-
-        private static List<decimal> ReadDecimalArray(JsonElement root, string propertyName)
-        {
-            if (!root.TryGetProperty(propertyName, out var array) || array.ValueKind != JsonValueKind.Array)
-            {
-                return new List<decimal>();
-            }
-
-            return array.EnumerateArray()
-                .Where(value => value.ValueKind == JsonValueKind.Number)
-                .Select(value => value.GetDecimal())
-                .ToList();
-        }
-
-        private static List<long> ReadLongArray(JsonElement root, string propertyName)
-        {
-            if (!root.TryGetProperty(propertyName, out var array) || array.ValueKind != JsonValueKind.Array)
-            {
-                return new List<long>();
-            }
-
-            return array.EnumerateArray()
-                .Where(value => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _))
-                .Select(value => value.GetInt64())
-                .ToList();
         }
 
         private sealed record Candle(

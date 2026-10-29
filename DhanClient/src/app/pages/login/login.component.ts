@@ -6,12 +6,13 @@ import { DhanAccountInput, DhanAccountStatus, DhanLoginResult } from '../../core
 
 interface AccountRow {
   accountName: string;
-  broker: 'DHAN' | 'ANGELONE';
+  broker: 'DHAN' | 'ANGELONE' | 'UPSTOX';
   dhanClientId: string;
   clientCode: string;
   pin: string;
   password: string;
   apiKey: string;
+  apiSecret: string;
   totpSecret: string;
 }
 
@@ -50,6 +51,7 @@ export class LoginComponent implements OnInit {
       pin: '',
       password: '',
       apiKey: '',
+      apiSecret: '',
       totpSecret: ''
     });
   }
@@ -64,12 +66,16 @@ export class LoginComponent implements OnInit {
       if (Array.isArray(existing) && existing.length > 0) {
         this.accounts = existing.map((a) => ({
           accountName: a.accountName,
-          broker: a.broker?.toUpperCase() === 'ANGELONE' ? 'ANGELONE' : 'DHAN',
+          broker: a.broker?.toUpperCase() === 'ANGELONE'
+            ? 'ANGELONE'
+            : a.broker?.toUpperCase() === 'UPSTOX' ? 'UPSTOX' : 'DHAN',
           dhanClientId: a.dhanClientId,
-          clientCode: a.broker?.toUpperCase() === 'ANGELONE' ? a.dhanClientId : '',
+          clientCode: a.broker?.toUpperCase() === 'ANGELONE' || a.broker?.toUpperCase() === 'UPSTOX'
+            ? a.dhanClientId : '',
           pin: '',
           password: '',
           apiKey: '',
+          apiSecret: '',
           totpSecret: ''
         }));
         return;
@@ -86,16 +92,17 @@ export class LoginComponent implements OnInit {
         accountName: a.accountName.trim(),
         broker: a.broker,
         dhanClientId: a.broker === 'DHAN' ? a.dhanClientId.trim() : '',
-        clientCode: a.broker === 'ANGELONE' ? a.clientCode.trim() : '',
+        clientCode: a.broker === 'ANGELONE' || a.broker === 'UPSTOX' ? a.clientCode.trim() : '',
         pin: a.pin.trim(),
         password: a.password.trim(),
         apiKey: a.apiKey.trim(),
+        apiSecret: a.apiSecret.trim(),
         totpSecret: a.totpSecret.trim()
       }))
       .filter((a) => a.broker === 'DHAN' ? !!a.dhanClientId : !!a.clientCode);
 
     if (payload.length === 0) {
-      this.saveStatusMessage = 'Add at least one Dhan or Angel One account.';
+      this.saveStatusMessage = 'Add at least one Dhan, Angel One, or Upstox account.';
       this.saveStatusIsError = true;
       return;
     }
@@ -140,6 +147,34 @@ export class LoginComponent implements OnInit {
       this.loginError = `Login failed: ${(err as Error).message}`;
     } finally {
       this.loggingIn = false;
+    }
+  }
+
+  async connectUpstox(account: AccountRow): Promise<void> {
+    if (!account.clientCode.trim()) {
+      this.saveStatusMessage = 'Enter and save the Upstox user ID before connecting.';
+      this.saveStatusIsError = true;
+      return;
+    }
+
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) {
+      this.saveStatusMessage = 'Allow pop-ups to connect the Upstox account.';
+      this.saveStatusIsError = true;
+      return;
+    }
+
+    this.saveStatusMessage = 'Opening Upstox authorization...';
+    this.saveStatusIsError = false;
+    try {
+      const { authorizationUrl } = await this.api.startUpstoxAuthorization(account.clientCode.trim());
+      popup.location.href = authorizationUrl;
+      this.saveStatusMessage = 'Complete authorization in the Upstox tab, then return here.';
+      await this.refreshStatus();
+    } catch (err) {
+      popup.close();
+      this.saveStatusMessage = `Could not connect Upstox: ${(err as Error).message}`;
+      this.saveStatusIsError = true;
     }
   }
 }

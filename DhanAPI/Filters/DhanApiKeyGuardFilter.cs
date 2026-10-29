@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using DhanService.Configuration;
@@ -27,6 +28,12 @@ namespace DhanAPI.Filters
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
+            if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+            {
+                await next();
+                return;
+            }
+
             if (string.IsNullOrEmpty(_options.ApiKey))
             {
                 _logger.LogWarning("DhanTrading:ApiKey is not configured - endpoints are reachable without a shared secret.");
