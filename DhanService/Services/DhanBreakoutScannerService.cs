@@ -145,7 +145,8 @@ namespace DhanService.Services
         private static bool IsEligibleNseFnoUnderlyingEquity(CashEquityInstrument instrument) =>
             string.Equals(instrument.Exchange, "NSE", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(instrument.Segment, "E", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(instrument.InstrumentType, "EQ", StringComparison.OrdinalIgnoreCase) &&
+            (string.Equals(instrument.InstrumentType, "EQ", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(instrument.InstrumentType, "ES", StringComparison.OrdinalIgnoreCase)) &&
             string.Equals(instrument.ExchangeSegment, "NSE_EQ", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(instrument.SecurityId) &&
             !string.IsNullOrWhiteSpace(instrument.UnderlyingSymbol);
