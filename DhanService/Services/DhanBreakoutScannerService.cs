@@ -180,19 +180,14 @@ namespace DhanService.Services
 
             var previous = latestCandles[0];
             var current = latestCandles[1];
-            if (previous.Close <= 0)
+            var previousAveragePrice = (previous.High + previous.Low) / 2m;
+            if (previousAveragePrice <= 0)
             {
                 return new InstrumentScanResult(null, null, false, false);
             }
 
-            // var changePercent = (current.Close - previous.Close) / previous.Close * 100;
-            // var direction = changePercent >= 1 ? "LONG" : changePercent <= -1 ? "SHORT" : null;
-
-            // Calculate absolute price difference
-            var changePercent = current.Close - previous.Close;
-
-            // Trigger LONG if price moved up by more than 5, SHORT if moved down by more than 5
-            var direction = changePercent > 5 ? "LONG" : changePercent < -5 ? "SHORT" : null;
+            var changePercent = (current.Close - previousAveragePrice) / previousAveragePrice * 100m;
+            var direction = changePercent >= 1m ? "LONG" : changePercent <= -1m ? "SHORT" : null;
 
             var signal = direction is null
                 ? null
@@ -230,7 +225,7 @@ namespace DhanService.Services
                         interval = "5",
                         oi = false,
                         fromDate = $"{today} 09:15:00",
-                        toDate = $"{today} 15:40:00"
+                        toDate = $"{today} 16:00:00"
                     };
 
                     using var request = new HttpRequestMessage(
@@ -284,6 +279,8 @@ namespace DhanService.Services
                 .Select(candle => new FiveMinuteCandle(
                     DateTimeOffset.FromUnixTimeSeconds(candle.Timestamp).ToOffset(IndiaOffset),
                     candle.Open,
+                    candle.High,
+                    candle.Low,
                     candle.Close))
                 .OrderBy(candle => candle.Timestamp)
                 .ToList();
@@ -324,7 +321,8 @@ namespace DhanService.Services
                 ? string.Join(", ", root.EnumerateObject().Select(property => property.Name))
                 : root.ValueKind.ToString();
 
-        private sealed record FiveMinuteCandle(DateTimeOffset Timestamp, decimal Open, decimal Close);
+        private sealed record FiveMinuteCandle(
+            DateTimeOffset Timestamp, decimal Open, decimal High, decimal Low, decimal Close);
         private sealed record CandleFetchResult(List<FiveMinuteCandle>? Candles, string? Error, bool RateLimited);
         private sealed record InstrumentScanResult(
             BreakoutSignal? Signal, string? Error, bool Failed, bool RateLimited);
