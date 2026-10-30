@@ -46,8 +46,9 @@ ng test
 
 ## 5-Minute F&O Price-Move Scanner
 
-The API scans current-expiry NSE F&O stock futures (NSE_FNO segment; index futures and non-futures are excluded) using
-Dhan's five-minute candles. It compares the latest fully closed candle's close with the immediately previous fully
+The API scans NSE EQ cash-equity scrips that are underlyings of NSE F&O contracts, sourced from Dhan's instrument
+master, using Dhan's five-minute equity candles. Derivative contracts and BSE listings are excluded. It compares the
+latest fully closed candle's close with the immediately previous fully
 closed candle's close and reports LONG moves of at least 2% or SHORT moves of at least 2%. It requests a short recent
 candle window and keeps scan results in memory; this scanner does not read from or write to a database. The worker
 scans after each five-minute boundary during market hours, and the Scanner page refreshes results every 30 seconds.

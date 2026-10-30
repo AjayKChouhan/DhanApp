@@ -44,8 +44,9 @@ namespace DhanService.Configuration
         public string UpstoxRedirectUri { get; set; } =
             "http://localhost:5050/api/dhantrading/upstox/callback";
 
-        /// <summary>URL of the Dhan compact instrument master CSV.</summary>
-        public string InstrumentMasterUrl { get; set; } = "https://images.dhan.co/api-data/api-scrip-master.csv";
+        /// <summary>URL of the Dhan detailed instrument master CSV.</summary>
+        public string InstrumentMasterUrl { get; set; } =
+            "https://images.dhan.co/api-data/api-scrip-master-detailed.csv";
 
         /// <summary>
         /// Optional shared-secret API key. When set, requests to the DhanTrading

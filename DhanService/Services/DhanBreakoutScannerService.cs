@@ -19,11 +19,6 @@ namespace DhanService.Services
         private static readonly TimeSpan IndiaOffset = TimeSpan.FromHours(5.5);
         private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(1);
         private const int MaxConcurrentRequests = 5;
-        private static readonly HashSet<string> IndexSymbols = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "BANKEX", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTY", "SENSEX"
-        };
-
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IDhanAccountStore _accountStore;
         private readonly IDhanAuthService _authService;
@@ -50,15 +45,15 @@ namespace DhanService.Services
         public async Task<BreakoutScannerResponse> ScanAsync(CancellationToken cancellationToken)
         {
             var now = DateTimeOffset.UtcNow.ToOffset(IndiaOffset);
-            var instruments = (await _instrumentService.GetFuturesAsync("NSE", cancellationToken))
-                .Where(instrument => IsEligibleNseStockFuture(instrument, now))
-                .GroupBy(instrument => instrument.UnderlyingSymbol.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.OrderBy(instrument => instrument.ExpiryDate).First())
+            var instruments = (await _instrumentService.GetNseFnoUnderlyingEquitiesAsync(cancellationToken))
+                .Where(IsEligibleNseFnoUnderlyingEquity)
+                .GroupBy(instrument => instrument.SecurityId, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
                 .ToList();
 
             if (instruments.Count == 0)
             {
-                throw new InvalidOperationException("No current-expiry NSE stock futures were found in the Dhan instrument list.");
+                throw new InvalidOperationException("No NSE F&O underlying cash equities were found in the Dhan instrument list.");
             }
 
             var accounts = (await _accountStore.GetAllAsync(cancellationToken))
@@ -95,7 +90,7 @@ namespace DhanService.Services
                 throw new InvalidOperationException("No saved Dhan account has a valid access token for the breakout scanner.");
             }
 
-            var scanResults = new ConcurrentBag<(FuturesInstrument Instrument, InstrumentScanResult Result)>();
+            var scanResults = new ConcurrentBag<(CashEquityInstrument Instrument, InstrumentScanResult Result)>();
             await Parallel.ForEachAsync(
                 instruments,
                 new ParallelOptions
@@ -130,12 +125,12 @@ namespace DhanService.Services
             var warning = failedCount == 0 && !rateLimited
                 ? null
                 : rateLimited
-                    ? $"Dhan rate-limited the scan. Scanned {scannedCount} of {instruments.Count} stock futures; {unscannedCount} were not completed. Retry on the next scan. {details}"
-                    : $"Market data was unavailable for {failedCount} of {instruments.Count} stock futures." +
+                    ? $"Dhan rate-limited the scan. Scanned {scannedCount} of {instruments.Count} NSE F&O underlying cash equities; {unscannedCount} were not completed. Retry on the next scan. {details}"
+                    : $"Market data was unavailable for {failedCount} of {instruments.Count} NSE F&O underlying cash equities." +
                       (string.IsNullOrWhiteSpace(details) ? string.Empty : $" {details}");
 
             _logger.LogInformation(
-                "Completed 5-minute NSE stock-futures scan: {Scanned}/{Total} instruments; {Failed} failed; {Signals} signals",
+                "Completed 5-minute NSE F&O underlying cash-equity scan: {Scanned}/{Total} instruments; {Failed} failed; {Signals} signals",
                 scannedCount, instruments.Count, failedCount, sortedSignals.Count);
 
             return new BreakoutScannerResponse(
@@ -147,23 +142,16 @@ namespace DhanService.Services
                 sortedSignals);
         }
 
-        private static bool IsEligibleNseStockFuture(FuturesInstrument instrument, DateTimeOffset now)
-        {
-            if (!instrument.ExpiryDate.HasValue ||
-                instrument.ExpiryDate.Value.Date < now.Date ||
-                !string.Equals(instrument.ExchangeSegment, "NSE_FNO", StringComparison.OrdinalIgnoreCase) ||
-                string.IsNullOrWhiteSpace(instrument.UnderlyingSymbol) ||
-                IndexSymbols.Contains(instrument.UnderlyingSymbol.Trim()))
-            {
-                return false;
-            }
-
-            return string.Equals(instrument.InstrumentType, "FUTSTK", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(instrument.InstrumentType, "FUT", StringComparison.OrdinalIgnoreCase);
-        }
+        private static bool IsEligibleNseFnoUnderlyingEquity(CashEquityInstrument instrument) =>
+            string.Equals(instrument.Exchange, "NSE", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(instrument.Segment, "E", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(instrument.InstrumentType, "EQ", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(instrument.ExchangeSegment, "NSE_EQ", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(instrument.SecurityId) &&
+            !string.IsNullOrWhiteSpace(instrument.UnderlyingSymbol);
 
         private async Task<InstrumentScanResult> ScanInstrumentAsync(
-            FuturesInstrument instrument,
+            CashEquityInstrument instrument,
             IReadOnlyList<(DhanAccountCredential Account, Token Token)> credentials,
             DateTimeOffset now,
             CancellationToken cancellationToken)
@@ -196,8 +184,15 @@ namespace DhanService.Services
                 return new InstrumentScanResult(null, null, false, false);
             }
 
-            var changePercent = (current.Close - previous.Close) / previous.Close * 100;
-            var direction = changePercent >= 2 ? "LONG" : changePercent <= -2 ? "SHORT" : null;
+            // var changePercent = (current.Close - previous.Close) / previous.Close * 100;
+            // var direction = changePercent >= 1 ? "LONG" : changePercent <= -1 ? "SHORT" : null;
+
+            // Calculate absolute price difference
+            var changePercent = current.Close - previous.Close;
+
+            // Trigger LONG if price moved up by more than 5, SHORT if moved down by more than 5
+            var direction = changePercent > 5 ? "LONG" : changePercent < -5 ? "SHORT" : null;
+
             var signal = direction is null
                 ? null
                 : new BreakoutSignal(
@@ -213,7 +208,7 @@ namespace DhanService.Services
         }
 
         private async Task<CandleFetchResult> FetchFiveMinuteCandlesAsync(
-            FuturesInstrument instrument,
+            CashEquityInstrument instrument,
             IReadOnlyList<(DhanAccountCredential Account, Token Token)> credentials,
             DateTimeOffset now,
             CancellationToken cancellationToken)
@@ -224,27 +219,13 @@ namespace DhanService.Services
                 try
                 {
                     await Task.Delay(RequestInterval, cancellationToken);
-
-                    // var payload = new
-                    // {
-                    //     securityId = instrument.SecurityId,
-                    //     exchangeSegment = instrument.ExchangeSegment,
-                    //     instrument = "FUTSTK",
-                    //     expiryCode = 0,
-                    //     interval = "5",
-                    //     oi = false,
-                    //     fromDate = "2026-10-27 14:35:00",
-                    //     toDate = "2026-10-27 14:50:00"
-                    // };
-
-                    var today = DateTime.Now.ToString("yyyy-MM-dd");
+                    var today = now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
                     var payload = new
                     {
                         securityId = instrument.SecurityId,
                         exchangeSegment = instrument.ExchangeSegment,
-                        instrument = "FUTSTK",
-                        expiryCode = 0,
+                        instrument = "EQUITY",
                         interval = "5",
                         oi = false,
                         fromDate = $"{today} 09:15:00",
